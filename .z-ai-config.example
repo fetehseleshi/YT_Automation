@@ -1,0 +1,8 @@
+{
+  "provider": "gemini",
+  "baseUrl": "https://generativelanguage.googleapis.com",
+  "apiKey": "put-your-gemini-api-key-here",
+  "model": "gemini-3.5-flash",
+  "chatId": "optional",
+  "userId": "optional"
+}

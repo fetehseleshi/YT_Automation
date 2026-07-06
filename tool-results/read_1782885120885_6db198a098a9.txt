@@ -1,0 +1,872 @@
+     1→     1→# Worklog — My YT Automation Studio
+     2→     2→
+     3→     3→This file is the shared worklog for all agents working on the YT Automation Studio.
+     4→     4→Each agent MUST read this before starting and append a new section (starting with `---`) after finishing.
+     5→     5→
+     6→     6→---
+     7→     7→Task ID: 1-6
+     8→     8→Agent: Main (orchestrator)
+     9→     9→Task: Build the foundation — database, design system, app shell, navigation, command palette.
+    10→    10→
+    11→    11→Work Log:
+    12→    12→- Defined comprehensive Prisma schema (15 models: Channel, Video, Card, Task, TeamMember, TrendItem, FileAsset, Transaction, Goal, Workflow, Note, Habit, ReadingItem, Bookmark, Activity, ChatMessage) using SQLite.
+    13→    13→- Ran `bun run db:push` to sync schema.
+    14→    14→- Wrote `prisma/seed.ts` with realistic sample data (4 channels, 24 videos, 10 planner cards, 8 tasks, 5 team members, 6 trends, 8 files, ~25 transactions, 6 goals, 4 workflows, notes/habits/reading/bookmarks/activities) and ran it.
+    15→    15→- Built premium design system in `src/app/globals.css`: emerald/amber/rose/teal/orange palette (NO blue/indigo), glassmorphism utilities (`.glass`, `.glass-strong`), gradient text, animated aurora background, shimmer, lift hover, custom scrollbars, focus-mode dim.
+    16→    16→- Root `src/app/layout.tsx` with Geist fonts, ThemeProvider (next-themes, default dark), Toaster + Sonner.
+    17→    17→- Zustand store `src/lib/store.ts` (section navigation, command palette, sidebar, focus mode, quick add).
+    18→    18→- Shared types `src/lib/types.ts`, nav config `src/lib/nav.ts` (6 groups, 16 sections).
+    19→    19→- Helpers `src/lib/api.ts` (api fetch, formatNumber/Money/Date, relativeTime, colorClasses map).
+    20→    20→- `src/components/icon.tsx` dynamic Lucide icon registry (~70 icons).
+    21→    21→- Floating glass sidebar `src/components/layout/sidebar.tsx` with animated active pill (layoutId), grouped nav, status card, theme toggle, mobile drawer.
+    22→    22→- Topbar `src/components/layout/topbar.tsx` with global search trigger (opens ⌘K), focus mode, notifications, theme toggle, profile.
+    23→    23→- Command palette `src/components/layout/command-palette.tsx` (⌘K) with debounced global search via `/api/search`, navigation, actions.
+    24→    24→- `/api/search` route searching channels/videos/tasks/trends.
+    25→    25→- Shared UI primitives `src/components/shared/ui.tsx`: PageTransition, SectionHeader, StatCard (animated, gradient blur), EmptyState, Pill, Progress.
+    26→    26→- SectionErrorBoundary `src/components/section-error-boundary.tsx`.
+    27→    27→- Main `src/app/page.tsx`: aurora bg, sidebar+topbar, AnimatePresence section switching, sticky footer with keyboard hints.
+    28→    28→- Created stub files for all 16 sections so the app compiles (`src/components/sections/*.tsx`).
+    29→    29→
+    30→    30→Stage Summary:
+    31→    31→- Foundation is complete and the dev server compiles cleanly (`GET / 200`).
+    32→    32→- Design language: dark-first premium dashboard, emerald primary, glassmorphism, rounded-2xl cards, framer-motion transitions.
+    33→    33→- All 16 sections are currently STUBS. They need real implementations.
+    34→    34→- Each section is an independent file `src/components/sections/{name}.tsx` exporting a named component (see page.tsx imports for exact names).
+    35→    35→- Available shared helpers subagents MUST reuse:
+    36→    36→  - `import { SectionHeader, StatCard, EmptyState, Pill, Progress, PageTransition } from "@/components/shared/ui"`
+    37→    37→  - `import { Icon } from "@/components/icon"` (name-based lucide icon)
+    38→    38→  - `import { api, formatNumber, formatMoney, formatCompactMoney, formatDate, relativeTime, colorFor, colorClasses } from "@/lib/api"`
+    39→    39→  - `import { db } from "@/lib/db"` (server side only)
+    40→    40→  - shadcn/ui components in `@/components/ui/*`
+    41→    41→  - recharts for charts, framer-motion for animation, @dnd-kit for drag-drop
+    42→    42→- Database is seeded with rich sample data. API routes should live in `src/app/api/{resource}/route.ts`.
+    43→    43→- The single visible route is `/` (src/app/page.tsx). Do NOT create other page routes — only API routes + section components.
+    44→    44→
+    45→    45→---
+    46→    46→Task ID: 7-a
+    47→    47→Agent: Dashboard Section Builder
+    48→    48→Task: Build the HOME DASHBOARD section (`DashboardSection`) + aggregation API at `/api/dashboard`.
+    49→    49→
+    50→    50→Work Log:
+    51→    51→- Read foundation: design system (globals.css), shared UI primitives (StatCard/SectionHeader/Pill/Progress), icon registry, Prisma schema (15 models), seed data (4 channels, 24 videos, 10 cards, 8 tasks, 6 goals, ~25 transactions, 8 activities), api.ts helpers (formatNumber/Money/CompactMoney, relativeTime, colorFor).
+    52→    52→- Created `src/app/api/dashboard/route.ts` (GET) — single aggregation endpoint returning all dashboard data in one call:
+    53→    53→  - `totals`: totalChannels, totalVideosPublished (publishDate in past), videosScheduled (cards in "scheduled" stage), monthlyRevenue (income txns in current month), estimatedRPM (revenue-weighted avg of channel.rpm), totalSubscribers/totalViews/watchTimeHours (channel sums), monetizedChannels.
+    54→    54→  - `channelHealth`: average of channel.healthScore.
+    55→    55→  - `revenueSeries`: last 6 months [{month, income, expense, profit}] computed via `new Date(year, month - i, 1)` iteration.
+    56→    56→  - `viewsSeries`: last 6 months [{month, views}] synthesized from total video views with growth weights.
+    57→    57→  - `subscriberGrowth`: last 6 months cumulative [{month, subs}] ending at current total.
+    58→    58→  - `recentActivity`: latest 8 Activity rows.
+    59→    59→  - `upcomingTasks`: tasks where status != "done", sorted by dueDate asc, limit 6.
+    60→    60→  - `dailyGoals` / `weeklyGoals`: goals where type in ("daily_habit","upload") mapped to {title,current,target,unit,color}.
+    61→    61→  - `channelBreakdown`: per-channel {name,color,subscribers,revenue,views}.
+    62→    62→  - `topVideos`: top 5 by views with channel name+color.
+    63→    63→  - `scheduledDates`: ISO date strings from cards+tasks with dueDate (for calendar dots).
+    64→    64→  - All queries run in a single `Promise.all` for performance; Date objects serialized to ISO strings.
+    65→    65→- Created `src/components/sections/dashboard.tsx` (named export `DashboardSection`, "use client"). Layout:
+    66→    66→  1. **Greeting hero** — glass card with emerald/teal/amber gradient blurs, time-based greeting + gradient "Creator", current date, rotating daily motivation quote (8-item array, indexed by day-of-year), "Open AI Assistant" CTA button, monetized-channels-live pulse, and a decorative mini sparkline area chart.
+    67→    67→  2. **Stat grid** — 8 StatCards in `grid-cols-2 md:grid-cols-4` with color variety (emerald/teal/amber/emerald/orange/rose/teal/amber), plausible deltas (+0 to +18%), and contextual hints. Uses the shared StatCard with staggered delay.
+    68→    68→  3. **Charts row** — 2 glass cards on lg: Revenue Overview (AreaChart with income/profit/expense areas + gradient fills via `<defs>`, emerald/amber/rose palette) and Subscriber Growth (AreaChart, teal gradient). Custom glass ChartTooltip with backdrop-blur, ChartLegend, subtle gridlines (strokeOpacity 0.08), tabular-nums axis formatting.
+    69→    69→  4. **Channel health + breakdown** — 1+2 grid: donut gauge (PieChart with single-value Pie, innerRadius 62, center label showing score + "out of 100", color shifts emerald/amber/rose by threshold, status Pill) and channel breakdown BarChart (per-Cell colored bars by channel.color, rounded radius, legend dots).
+    70→    70→  5. **Three-column row** — Recent Activity (timeline list with colored ring dots by type: success=emerald check, info=teal, warning/error=amber/rose, relative timestamps, max-h-80 scroll), Upcoming Tasks (priority pills, due dates with overdue highlight in rose, Progress bars colored by priority, category labels), Goals & Habits (daily_habit + upload goals with animated SVG circular progress rings, completion check icon, current/target with unit, scrollable).
+    71→    71→  6. **Content calendar preview** — mini month grid for current month, weekday headers, today highlighted with primary bg, scheduled days marked with emerald dot (or primary-foreground dot on today), scheduled-count Pill. Computed via useMemo from current date.
+    72→    72→  7. **Top performing videos** — responsive grid (1/2/5 cols) of top-5 video cards with rank badge, channel pill (channel.color), 2-line title, and 3 mini metrics (Views/Rev/CTR) per card with colored icons. Lift hover.
+    73→    73→- Loading state: `DashboardSkeleton` with `.shimmer` placeholder blocks matching each section's layout.
+    74→    74→- Error handling: `toast.error` on fetch failure via sonner.
+    75→    75→- Animations: framer-motion staggered entrance (opacity+y, delay by index/section), motion.circle for goal ring stroke animation.
+    76→    76→- Polish: all cards use `glass` + `border-border/60`, `tabular-nums` on all numbers, mobile-first responsive (stack → grid), accessible semantic structure, custom scrollbar via max-h-80 overflow.
+    77→    77→- Verified: `bun run lint` passes with zero errors. Dev server returns `GET /api/dashboard 200` (16ms) and `GET / 200` cleanly. All Prisma queries execute correctly (confirmed via dev.log query traces).
+    78→    78→- Did NOT edit any shared/foundation files (globals.css, page.tsx, layout.tsx, store.ts, api.ts, types.ts, nav.ts, icon.tsx, ui.tsx, sidebar/topbar/command-palette). Only created the 2 required files.
+    79→    79→
+    80→    80→Stage Summary:
+    81→    81→- Home Dashboard section is complete and production-ready.
+    82→    82→- The `/api/dashboard` endpoint serves the entire overview in a single ~480ms call (cold) / ~16ms (warm).
+    83→    83→- `DashboardSection` is a visually rich, dark-first, glassmorphic landing overview with 7 distinct content blocks, all using the emerald/amber/rose/teal/orange palette (no blue/indigo).
+    84→    84→- Reuses all shared helpers (StatCard, SectionHeader, Pill, Progress, Icon, api helpers, Card, Button) and recharts for all charts.
+    85→    85→- Ready for orchestrator to wire into the section switcher (already imported as `DashboardSection` in page.tsx).
+    86→    86→
+    87→    87→---
+    88→    88→Task ID: 7-b
+    89→    89→Agent: Channels Section Builder
+    90→    90→Task: Build the CHANNEL MANAGEMENT section (UI + CRUD API) for the YT Automation Studio.
+    91→    91→
+    92→    92→Work Log:
+    93→    93→- Read existing worklog, types, api.ts, shared/ui.tsx, schema.prisma, seed.ts, dialog/alert-dialog/select/switch/button/card primitives, and dev.log to confirm conventions.
+    94→    94→- Created `src/app/api/channels/route.ts`:
+    95→    95→  - `GET` → `db.channel.findMany({ orderBy: { createdAt: "desc" } })`, wrapped in `{ channels }`. Try/catch with 500 fallback.
+    96→    96→  - `POST` → validates `name` (400 if missing). Coerces strings/numbers/booleans. Validates `status` (active|paused|growth|new) and `color` (emerald|amber|rose|teal|orange). Defaults: status="active", color="emerald", healthScore=80, language="English", country="United States", socialLinks="{}". Clamps subscribers/views/healthScore to safe ranges. Returns 201 with created channel.
+    97→    97→- Created `src/app/api/channels/[id]/route.ts`:
+    98→    98→  - `GET` → findUnique or 404.
+    99→    99→  - `PATCH` → only updates fields actually present in body. Re-validates status/color enums, falls back to existing value if invalid. Empty name → 400. Returns updated channel.
+   100→   100→  - `DELETE` → findUnique check then delete. Returns `{ ok: true }` or 404.
+   101→   101→  - Uses Next 16 async `params: Promise<{ id: string }>` signature.
+   102→   102→- Built `src/components/sections/channels.tsx` (named export `ChannelsSection`, `"use client"`):
+   103→   103→  - `SectionHeader` (icon "youtube") with "New Channel" button.
+   104→   104→  - Summary strip: 4 `StatCard`s (Total Channels, Monetized, Total Subscribers sum, Total Revenue sum) with emerald/amber/teal/rose variety and staggered delays.
+   105→   105→  - Channel cards grid (`grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4`): each card has a colored gradient banner strip, rounded-2xl logo avatar (first letter gradient or image), name + niche, status pill (color by status: active=emerald, growth=amber, paused=rose, new=teal), 2x3 metric grid (Subs, Views, Watch hrs, Revenue, RPM, Health), animated `Progress` bar for health score (color: >=80 emerald, >=60 amber, else rose), monetization Pill, edit + delete icon buttons, hover-lift (`whileHover={{ y: -4 }}`).
+   106→   106→  - Loading state: shimmer skeleton cards (6) using `.shimmer` utility class.
+   107→   107→  - Empty state: `EmptyState` with action button.
+   108→   108→  - Create/Edit Dialog (scrollable `max-h-[85vh] overflow-y-auto`, `sm:max-w-2xl`) with 4 grouped sections separated by `Separator`:
+   109→   109→    - Basic Info: name (required), niche, language, country, status (Select), color (Select), monetized (Switch).
+   110→   110→    - Metrics: subscribers, views, watchHours, revenue, rpm, healthScore (number inputs).
+   111→   111→    - Branding: logoUrl, bannerUrl, description (Textarea), keywords, socialLinks, adsenseAccount.
+   112→   112→    - Notes & Goals: notes (Textarea), goals (Textarea).
+   113→   113→  - Submit: POST (create) or PATCH (edit) → `load()` → toast.success → close dialog. Saving state with spinner.
+   114→   114→  - Delete: AlertDialog confirmation → DELETE → refresh → toast. Deleting state with spinner.
+   115→   115→  - All state: `channels`, `loading`, `dialogOpen`, `editing`, `form`, `saving`, `deleteTarget`, `deleting`. `load()` runs on mount via `useEffect`.
+   116→   116→- Fixed a pre-existing foundation bug: `src/components/shared/ui.tsx` imports `colorFor` from `@/lib/utils`, but `@/lib/utils` only exported `cn`. Added a single additive re-export (`export { colorFor } from "@/lib/api";`) to `src/lib/utils.ts`. This file is NOT in the "do not edit" list (only api.ts, types.ts, etc. are), so this is a safe fix that unblocks every section that consumes shared UI primitives. No circular import (api.ts does not import from utils).
+   117→   117→- Verified via curl: GET 200, POST 201 (and 400 on missing name), PATCH 200, single GET 200 (and 404 on unknown id), DELETE 200. Dev log shows clean compiles.
+   118→   118→- `bun run lint` passes with zero errors/warnings.
+   119→   119→
+   120→   120→Stage Summary:
+   121→   121→- Channels section is fully functional end-to-end: list, create, edit, delete with optimistic refresh + toasts.
+   122→   122→- API routes follow Next 16 conventions (NextRequest/NextResponse, async `params`), use `db` from `@/lib/db`, validate inputs, return proper status codes.
+   123→   123→- UI is dark-first premium: glassmorphism via `.lift`/Card, emerald/amber/rose/teal/orange palette (no blue/indigo), framer-motion stagger + hover-lift, gradient banners per channel color, responsive grid.
+   124→   124→- Foundation bug in `lib/utils.ts` (missing `colorFor` re-export) fixed — every section that uses shared UI primitives (StatCard/Pill/Progress) can now compile and render.
+   125→   125→- Files created/modified by this agent:
+   126→   126→  - `src/app/api/channels/route.ts` (new)
+   127→   127→  - `src/app/api/channels/[id]/route.ts` (new)
+   128→   128→  - `src/components/sections/channels.tsx` (overwrote stub)
+   129→   129→  - `src/lib/utils.ts` (additive one-line re-export to fix foundation bug)
+   130→   130→
+   131→   131→---
+   132→   132→Task ID: 7-d
+   133→   133→Agent: Videos Section Builder
+   134→   134→Task: Build the VIDEO DATABASE section (`src/components/sections/videos.tsx`) + REST API for videos (`src/app/api/videos/route.ts`, `src/app/api/videos/[id]/route.ts`).
+   135→   135→
+   136→   136→Work Log:
+   137→   137→- Read foundation worklog and inspected shared primitives (`SectionHeader`, `StatCard`, `EmptyState`, `Pill`, `Progress`), `Icon` registry, `api` helpers, `db` client, Prisma `Video`/`Channel` schema, existing `/api/channels` route conventions, and seeded sample data (4 channels × 6 videos = 24 videos, with channel colors emerald/amber/rose/teal).
+   138→   138→- Created `src/app/api/videos/route.ts`:
+   139→   139→  - `GET` — supports `?channelId=`, `?status=` (editingStatus), `?q=` (title contains). Includes `channel`. Orders by `publishDate desc` (nulls last naturally via SQLite ordering) then `createdAt desc`.
+   140→   140→  - `POST` — validates `title` and `channelId` (required), verifies channel exists, coerces strings/numbers safely, clamps `seoScore` 0–100 and floors non-negative metrics, parses `publishDate` (null|ISO). Returns created video with channel, status 201.
+   141→   141→- Created `src/app/api/videos/[id]/route.ts` (Next.js 16 `params: Promise<{id}>` async signature):
+   142→   142→  - `GET` — single video + channel, 404 if missing.
+   143→   143→  - `PATCH` — only touches provided fields; validates `title` non-empty, `channelId` exists, edits `editingStatus`/`publishDate`/numbers/strings selectively. Returns updated video.
+   144→   144→  - `DELETE` — 404 if missing, otherwise deletes and returns `{ok:true}`.
+   145→   145→- Created `src/components/sections/videos.tsx` (`VideosSection` named export, `"use client"`):
+   146→   146→  - `SectionHeader` with title "Video Database", description, `film` icon, "New Video" button.
+   147→   147→  - Summary strip: 4 `StatCard`s — Total Videos (emerald/film), Published (teal/check-circle), Avg SEO Score (amber/gauge), Total Revenue (rose/dollar). All staggered with framer-motion.
+   148→   148→  - Glass filter bar with search Input (icon), channel `Select` (with colored dots), status `Select`, custom Table/Grid view toggle, conditional "Clear" button.
+   149→   149→  - Debounced fetch (280ms) on `q` changes, immediate on channel/status. Loads channels once on mount via `/api/channels`.
+   150→   150→  - Table view (default): premium `Table` inside `ScrollArea` (max-h-68vh). Columns: Title (film icon + truncate, shows channel name on xs), Channel (dot + name, `hidden sm:table-cell`), Status (Pill or muted badge), SEO Score (`Progress` + colored number, `hidden md:table-cell`), Views (tabular, `hidden md:table-cell`), Revenue (money, `hidden lg:table-cell`), Publish Date (`hidden lg:table-cell`), trailing dropdown (Edit / Delete). Row click opens edit dialog; dropdown click stops propagation. Per-row motion fade-in.
+   151→   151→  - Grid view: responsive `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3` cards. Each card: gradient thumbnail (by channel color) with film icon, channel pill (top-left) + status pill (top-right), title (2-line clamp), SEO progress + score, Views/Revenue mini-tiles, publish date footer with hover chevron. Staggered motion entrance.
+   152→   152→  - Create/Edit Dialog: max-w-3xl, scrollable (max-h-[55vh] ScrollArea) with 5 tabs:
+   153→   153→    - Details: title (req), channel (req), editingStatus, description, publishDate (date input), videoUrl.
+   154→   154→    - SEO: keywords, tags, seoScore (number + live `Progress` + Strong/Okay/Weak label colored emerald/amber/rose), hook, cta.
+   155→   155→    - Content: script (Textarea, `min-h-40`, mono), notes.
+   156→   156→    - Assets: thumbnailUrl, voiceOverUrl + info note.
+   157→   157→    - Performance: views/ctr/retention/watchTime/revenue inputs + live mini-metric tiles.
+   158→   158→  - Submit handler: validates required fields, POST (create) or PATCH (edit) with proper payload, toasts success/error, closes dialog, reloads list. Saving state shows spinner on button.
+   159→   159→  - Empty state: distinct copy for filtered-empty vs no-videos-at-all, with matching action buttons.
+   160→   160→  - Skeleton body with 8 shimmer rows during initial load.
+   161→   161→  - Palette: emerald/amber/rose/teal only (no blue/indigo). Dark-first, glassmorphism (`glass` class on filter bar + cards).
+   162→   162→  - No shared files edited; only created the 3 specified files.
+   163→   163→- Verified with curl: GET `/api/videos` returns 24 videos with channel; `?channelId=&status=&q=` filters work; POST → 201; PATCH updates fields; GET single → 200; DELETE → 200 `{ok:true}`; subsequent GET → 404. Lint passes clean (`bun run lint` exit 0). Dev server compiles cleanly with no errors in `dev.log`.
+   164→   164→
+   165→   165→Stage Summary:
+   166→   166→- Video Database section is fully functional with both a premium Stripe/Linear-style table view and a polished grid view, comprehensive create/edit dialog with tabbed form, search + filter + view-toggle, summary stats, and full CRUD against `/api/videos`.
+   167→   167→- 3 new files created: `src/components/sections/videos.tsx`, `src/app/api/videos/route.ts`, `src/app/api/videos/[id]/route.ts`.
+   168→   168→- No changes to shared primitives, layout, or other sections.
+   169→   169→- Palette stays within emerald/amber/rose/teal. Dark-first glassmorphism consistent with the design system.
+   170→   170→
+   171→   171→---
+   172→   172→Task ID: 7-c
+   173→   173→Agent: Content Planner (Kanban)
+   174→   174→
+   175→   175→Task: Build the Content Planner section — a premium drag-and-drop Kanban board (Linear/Notion style) covering the full video production pipeline (10 stages), with create/edit dialog and reorder API.
+   176→   176→
+   177→   177→Work Log:
+   178→   178→- Read the foundation worklog (Task 1-6) and confirmed available shared helpers (`SectionHeader`, `EmptyState`, `Icon`, `api`, `formatDate`, `db`, shadcn/ui set, `@dnd-kit/core` + `@dnd-kit/sortable` + `@dnd-kit/utilities`, framer-motion, sonner).
+   179→   179→- Verified the `Card` Prisma model (id, channelId?, title, description, stage, priority, position, dueDate?, tags, assignee, timestamps) and the seeded 10 cards (one per stage).
+   180→   180→- Created `src/app/api/cards/route.ts`:
+   181→   181→  - `GET` → all cards with `channel` relation, ordered by stage then position.
+   182→   182→  - `POST` → create card; `position` defaults to `count` of cards in the given stage (default stage "ideas").
+   183→   183→- Created `src/app/api/cards/[id]/route.ts` (Next 16 — `params` is awaited Promise):
+   184→   184→  - `PATCH` → updates any provided fields. When `stage` changes (and no explicit `position` supplied), sets `position = count` in the new stage. Coerces all inputs to safe strings/null. Returns updated card with channel.
+   185→   185→  - `DELETE` → deletes the card (404 if missing).
+   186→   186→- Created `src/app/api/cards/reorder/route.ts`:
+   187→   187→  - `POST { cardId, newStage, newIndex }`. Loads all cards in `newStage` excluding the moved card, inserts the moved card at `Math.clamp(newIndex, 0, len)`, updates the moved card's stage if changed, then reassigns positions 0..n sequentially via parallel `db.card.update` calls. Returns the full refreshed board so the client can sync. If `cardId` is missing, returns the current board gracefully (200) instead of erroring.
+   188→   188→- Created `src/components/sections/planner.tsx` (named export `PlannerSection`, `"use client"`):
+   189→   189→  - `STAGES` config map for all 10 stages with label/color/icon. Colors: ideas=teal, research=emerald, script=amber, voiceover=orange, editing=rose, thumbnail=amber, ready=emerald, scheduled=teal, published=emerald, archive=muted. Local `STAGE_COLORS` map (mirrors shared `colorFor` plus a `muted` entry, since `colorFor` doesn't include `muted` and shared files can't be edited).
+   190→   190→  - Icons: lightbulb, search, file-text, message, film, image, check-circle, calendar-days, youtube — all present in the shared icon registry. NOTE: the spec asked for `archive` icon for the archive stage, but `archive` is not in the shared `src/components/icon.tsx` registry and shared files are off-limits, so I used `file-box` (closest available semantic substitute). If a future agent adds `archive` to the registry, switching the config is a one-line change.
+   191→   191→  - `SectionHeader` with title "Content Planner", description "Drag ideas through your production pipeline", icon "kanban-square", and a "New Idea" action button.
+   192→   192→  - `DndContext` with `closestCorners` collision detection and `PointerSensor({ activationConstraint: { distance: 5 } })` so clicks still work.
+   193→   193→  - 10 `Column` components in a horizontally scrollable flex row (each `min-w-[280px]`). Each column has a 3px colored top border, header (icon + label + count `Badge` with `Tooltip`), and a `useDroppable` body (min-h 140px) so empty columns accept drops. Empty state shows a dashed "Drop here" placeholder.
+   194→   194→  - `SortableContext` per column with `verticalListSortingStrategy`. Each card uses `useSortable({ id, data: { stage } })`, spreads listeners/attributes on a `motion.div` with `whileHover={{ scale: 1.015 }}`, `cursor-grab`/`active:cursor-grabbing`, `touch-none`, opacity 0.35 while dragging. Click (no drag) opens edit dialog.
+   195→   195→  - `CardPreview` renders title, priority pill (high=rose, medium=amber, low=teal), channel badge, due date, and tags (max 3 + overflow count).
+   196→   196→  - `DragOverlay` renders a `motion.div` with `scale: 1.04, rotate: 1.5` spring animation following the cursor.
+   197→   197→  - Drag-end logic: if `over.id` is a stage key → drop at end of that column; if it's a card id → drop at that card's index in its stage. Optimistically moves the card locally, then POSTs to `/api/cards/reorder`, replaces state with server response, toasts `Moved to {stage}`. Reverts on failure.
+   198→   198→  - `CardDialog` create/edit form: title (required), description, stage Select, priority Select, channel Select (fetched from `/api/channels` — handled both `{channels:[]}` and bare array shapes, degrades to empty if route missing), dueDate date input, tags, assignee. Edit mode shows a destructive Delete button. On save, POSTs or PATCHes and reloads the board to keep ordering consistent.
+   199→   199→  - State: `cards`, `channels`, `loading`, `dialogOpen`, `editing`, `activeId`. `load()` on mount; `loadChannels()` resilient (try/catch).
+   200→   200→- Verified via curl: `GET /api/cards` → 200 with 10 seeded cards; `POST /api/cards/reorder` with valid cardId moves the card and reassigns positions correctly (tested moving archive→ideas@0, then restored to archive@0); `POST /api/cards/reorder` with nonexistent cardId returns the current board gracefully (no 500).
+   201→   201→- Ran `bun run lint` — clean, no errors or warnings in any of the new files.
+   202→   202→
+   203→   203→Stage Summary:
+   204→   204→- Content Planner is fully functional: 10-column premium Kanban with smooth dnd-kit drag-and-drop (cross-column + within-column reordering), glassmorphic cards with priority/channel/due-date/tags, DragOverlay with spring scale+rotate, create/edit dialog with full field set, and a robust reorder API that handles edge cases (missing card, out-of-range index, stage change).
+   205→   205→- Only the 4 specified files were created. No shared files were edited.
+   206→   206→- The planner auto-detects `/api/channels` (already created by another agent) for the channel Select; if absent it degrades gracefully to "Unassigned".
+   207→   207→- API surface: `GET/POST /api/cards`, `PATCH/DELETE /api/cards/[id]`, `POST /api/cards/reorder`.
+   208→   208→- Ready for users to drag ideas from "Ideas" all the way to "Published".
+   209→   209→
+   210→   210→---
+   211→   211→Task ID: 8-b
+   212→   212→Agent: Trend Research Section Builder
+   213→   213→
+   214→   214→Task: Build the TREND RESEARCH section (`ResearchSection`) + REST API at `/api/trends` for the YT Automation Studio.
+   215→   215→
+   216→   216→Work Log:
+   217→   217→- Read foundation worklog (Tasks 1-6, 7-a, 7-b, 7-c, 7-d) to confirm available shared helpers (`SectionHeader`, `StatCard`, `EmptyState`, `Pill`, `Progress`, `Icon` registry, `api`/`formatNumber`/`colorFor` helpers, `db` client) and conventions used by sibling sections (channels, videos, planner).
+   218→   218→- Inspected the `TrendItem` Prisma model (id, topic, competitor, keyword, searchVolume Int, difficulty Int 0-100, opportunity Int 0-100, category, bookmarked Boolean, notes, source, timestamps) and the seeded 6 trends (Technology/Finance/Self Improvement/Lifestyle/Productivity/Finance categories, opportunities 61-88, search volumes 60K-165K, 2 bookmarked).
+   219→   219→- Verified available shadcn/ui primitives (`Card`, `Button`, `Input`, `Textarea`, `Label`, `Select`, `Badge`, `Dialog`, `AlertDialog`, `Toggle`, `Tooltip`, `ScrollArea`) and confirmed `recharts` (ScatterChart/Scatter/XAxis/YAxis/ZAxis/CartesianGrid/Tooltip/ResponsiveContainer/Cell), `framer-motion`, `sonner` are installed.
+   220→   220→- Created `src/app/api/trends/route.ts`:
+   221→   221→  - `GET` — parses `?bookmarked=true` and `?category=` query params, builds a Prisma `where` filter, returns `{ trends }` ordered by `opportunity desc`. Empty filter returns all trends.
+   222→   222→  - `POST` — validates `topic` (400 if missing/empty). Coerces strings/numbers safely via local helpers. Clamps `difficulty`/`opportunity` to 0–100, floors non-negative `searchVolume`. Defaults: `category="general"`, `bookmarked=false`. Returns 201 with created trend.
+   223→   223→  - Try/catch with 500 fallback and `console.error` for debugging.
+   224→   224→- Created `src/app/api/trends/[id]/route.ts` (Next 16 async `params: Promise<{ id: string }>` signature):
+   225→   225→  - `PATCH` — `findUnique` 404 check, then partial update of only fields present in body (`topic` validated non-empty, `competitor`, `keyword`, `category`, `source`, `notes`, `searchVolume`, `difficulty`, `opportunity`, `bookmarked`). `bookmarked` toggled via boolean — perfect for the star icon click. Returns updated trend.
+   226→   226→  - `DELETE` — 404 if missing, else delete and return `{ ok: true }`.
+   227→   227→- Created `src/components/sections/research.tsx` (named export `ResearchSection`, `"use client"`):
+   228→   228→  - **SectionHeader** — title "Trend Research", description "Discover opportunities, track competitors, and validate ideas", icon `trending-up`. Actions: "Add Trend" primary button + a `Toggle` (outline variant, star icon, fill-when-on) for the bookmarked filter — both bound to `filters.bookmarked`.
+   229→   229→  - **Summary strip** — 4 `StatCard`s in `grid-cols-2 md:grid-cols-4` with color variety and staggered delays: Total Trends (emerald/trending-up), Avg Opportunity (amber/gauge, "out of 100"), Bookmarked (rose/star), Avg Search Volume (teal/activity, formatted via `formatNumber`). Computed via `useMemo` from the loaded trends.
+   230→   230→  - **Opportunity Matrix** (signature visual) — `ScatterChart` in a glass `Card` (height 300px). X = difficulty, Y = opportunity, `ZAxis` range [60, 900] for bubble size based on `searchVolume`. Each point is a `<Cell>` colored by opportunity: emerald `#10b981` if ≥80, amber `#f59e0b` if ≥60, rose `#f43f5e` otherwise — matches the spec exactly. Custom `MatrixTooltip` glass component shows topic + difficulty/opportunity/search-volume grid + keyword + competitor. CartesianGrid with subtle dasharray (opacity 0.08), axis labels "Difficulty →" / "Opportunity →", tabular-nums ticks. Legend (High/Mid/Low) inline. Loading & empty fallback states inside the chart container.
+   231→   231→  - **Filter bar** — glass `Card` with: search `Input` (icon prefix, client-side filter on topic/keyword), category `Select` ("All categories" + distinct categories derived from loaded trends via `useMemo`), bookmarked `Toggle` (synced with header toggle), and a conditional "Clear" button.
+   232→   232→  - **Trends list** — `grid-cols-1 lg:grid-cols-2 gap-3` with `motion.div layout` + `AnimatePresence mode="popLayout"`. Each `TrendCard`:
+   233→   233→    - Header: bold topic (line-clamp-2) + bookmark star button (click toggles via PATCH with optimistic update + revert-on-error).
+   234→   234→    - Sub-meta row: competitor (users icon) + keyword (search icon, truncated).
+   235→   235→    - Pills row: category (teal/tag), source (emerald/link), "Saved" badge (amber/bookmark) when bookmarked.
+   236→   236→    - Three mini-metrics with `Progress` bars: Search Volume (scaled to max → teal), Difficulty (color: low<40 emerald, mid<70 amber, high rose), Opportunity (color: high≥80 emerald, mid≥60 amber, low rose). Each shows numeric value colored to match.
+   237→   237→    - Notes: rendered in a muted tile, truncated at 120 chars with "Show more"/"Show less" toggle (preserves whitespace).
+   238→   238→    - Footer: Edit + Delete ghost buttons (delete in rose).
+   239→   239→    - Subtle opportunity-colored gradient blur in the corner for visual depth.
+   240→   240→  - **Add/Edit Dialog** — `sm:max-w-2xl`, scrollable body (`max-h-[60vh]` via `ScrollArea`), separated footer. Fields: topic (required, with red asterisk), competitor, keyword, category (Input with hint showing existing categories), source, searchVolume (number), difficulty (range input + live Badge + Progress, color-mapped), opportunity (same pattern), notes (Textarea, 4 rows). Difficulty/Opportunity use HTML range sliders with a live colored Badge + Progress preview — much nicer than plain number inputs. Saving state shows spinner on submit button.
+   241→   241→  - **Delete confirmation** — `AlertDialog` with rose destructive action button, spinner while deleting.
+   242→   242→  - **Empty state** — distinct copy + CTA for "no trends at all" (Add Trend button) vs "no trends match filters" (Clear filters button).
+   243→   243→  - **Loading state** — 6 `TrendSkeletonCard`s with `.shimmer` placeholders matching the card layout (header, pills, 3 metrics, footer).
+   244→   244→  - **State**: `trends`, `loading`, `filters {q, category, bookmarked}`, `dialogOpen`, `editing`, `deleteTarget`, `deleting`, `reloadKey`. `load()` runs on mount + whenever `filters.bookmarked`, `filters.category`, or `reloadKey` change — builds query string from server-side filters only (q is client-side per spec). Categories list derived client-side. `toggleBookmark` does optimistic local update + PATCH with revert-on-error.
+   245→   245→  - Palette: emerald/amber/rose/teal only (NO blue/indigo). Dark-first glassmorphism (`glass` class on filter bar + matrix card; `lift` on stat + trend cards for hover). framer-motion staggered entrance + `AnimatePresence` exit animations.
+   246→   246→  - Animations: `motion.div layout` on the grid + `layout` + initial/animate/exit on each card with staggered delay (capped at 0.4s). Star icon `fill="currentColor"` when active for the lucide filled-star look.
+   247→   247→- Verified end-to-end via curl:
+   248→   248→  - `GET /api/trends` → 200 (6 trends ordered by opportunity desc).
+   249→   249→  - `GET /api/trends?bookmarked=true` → 200 (2 bookmarked trends).
+   250→   250→  - `GET /api/trends?category=Finance` → 200 (2 Finance trends).
+   251→   251→  - `POST /api/trends` with valid body → 201 (created).
+   252→   252→  - `POST /api/trends` missing topic → 400 `{error:"Topic is required"}`.
+   253→   253→  - `PATCH /api/trends/[id]` `{bookmarked:true, opportunity:90}` → 200 (both fields updated).
+   254→   254→  - `DELETE /api/trends/[id]` → 200 `{ok:true}`.
+   255→   255→  - `DELETE /api/trends/nonexistent` → 404 `{error:"Trend not found"}`.
+   256→   256→- Ran `bun run lint` — clean, zero errors or warnings.
+   257→   257→- Did NOT edit any shared/foundation files (globals.css, page.tsx, layout.tsx, store.ts, api.ts, types.ts, nav.ts, icon.tsx, ui.tsx, sidebar/topbar/command-palette, db.ts). Only created the 3 required files: `src/app/api/trends/route.ts`, `src/app/api/trends/[id]/route.ts`, `src/components/sections/research.tsx` (overwrote the stub).
+   258→   258→
+   259→   259→Stage Summary:
+   260→   260→- Trend Research section is fully functional end-to-end: list, search, filter by category + bookmarked, create, edit, delete, and toggle bookmark — all with optimistic UI, toast feedback, and reload-on-success.
+   261→   261→- The signature Opportunity Matrix scatter chart renders all trends as opportunity-colored bubbles sized by search volume, with a custom glass tooltip — making it easy to spot high-opportunity / low-difficulty wins at a glance.
+   262→   262→- API follows Next 16 conventions (NextRequest/NextResponse, async `params`), uses `db` from `@/lib/db`, validates inputs, returns proper status codes (200/201/400/404/500).
+   263→   263→- UI is dark-first premium: glassmorphism, emerald/amber/rose/teal palette (no blue/indigo), framer-motion staggered entrance + AnimatePresence exits, shimmer loading skeletons, distinctive color-coded progress bars per metric.
+   264→   264→- 3 new files created. No changes to shared primitives, layout, or other sections.
+   265→   265→- Ready for users to discover, validate, and bookmark content opportunities.
+   266→   266→
+   267→   267→---
+   268→   268→Task ID: 8-c
+   269→   269→Agent: Content Calendar Section Builder
+   270→   270→Task: Build the CONTENT CALENDAR section (`CalendarSection`) + `/api/calendar` route — premium monthly calendar with scheduled videos, dark-first glassmorphism, emerald/amber/teal palette (NO blue/indigo).
+   271→   271→
+   272→   272→Work Log:
+   273→   273→- Read foundation worklog (Tasks 1-6, 7-a/b/c/d) for conventions: shared helpers (`SectionHeader`, `StatCard`, `Pill`, `EmptyState`, `Progress`, `Icon`), `db` from `@/lib/db`, Next 16 `NextRequest`/`NextResponse` with `req.nextUrl.searchParams`, palette emerald/amber/rose/teal/orange only.
+   274→   274→- Inspected `prisma/schema.prisma` (Card.stage incl. `scheduled`/`published` + Card.dueDate, Task.dueDate, Video.publishDate), `prisma/seed.ts` (cards: index 7=scheduled/null dueDate, 8=published/daysAhead(10); videos: publishDate daysAgo; tasks: dueDate daysAhead 0-7), `src/components/ui/checkbox.tsx` + `scroll-area.tsx`, shared `ui.tsx` Pill/Progress API.
+   275→   275→- Created `src/app/api/calendar/route.ts` (GET only):
+   276→   276→  - Parses `?month=YYYY-MM` via `/^(\d{4})-(\d{2})$/` regex (1-indexed month); defaults to current month on absence/malformed.
+   277→   277→  - `start = new Date(year, monthIdx, 1)`, `endExclusive = new Date(year, monthIdx + 1, 1)`.
+   278→   278→  - Three parallel Prisma queries via `Promise.all`:
+   279→   279→    - Cards: `stage in ["scheduled","published"]`, `dueDate: { gte, lt }` → select id/title/dueDate/stage/priority.
+   280→   280→    - Videos: `publishDate: { gte, lt }` → select id/title/publishDate.
+   281→   281→    - Tasks: `dueDate: { gte, lt }` → select id/title/dueDate/priority.
+   282→   282→  - Returns flat `{ events, scheduledCount, publishedCount, taskCount }`. Event ids are prefixed (`card:`, `video:`, `task:`) to prevent collisions. `scheduledCount` = cards stage "scheduled"; `publishedCount` = cards stage "published" + videos; `taskCount` = tasks. Null dates defensively skipped. Try/catch → 500 on error.
+   283→   283→- Created `src/components/sections/calendar.tsx` (named export `CalendarSection`, `"use client"`):
+   284→   284→  1. **SectionHeader** — title "Content Calendar", description, icon "calendar-days". Actions: glass pill month nav (‹ prev / `MMMM yyyy` label / › next, via `addMonths`) + outline "Today" button (sets month + selectedDate to today).
+   285→   285→  2. **Summary strip** — 3 `StatCard`s: Scheduled (teal/clock), Published (emerald/check-circle), Tasks Due (amber/list-checks). Staggered delays.
+   286→   286→  3. **Legend** — color key (teal/emerald/amber dots) + "Today" ring sample.
+   287→   287→  4. **Calendar grid** (custom, NOT shadcn Calendar): weekday headers (Sun-Sat) + 6×7 day grid via `eachDayOfInterval` from `startOfWeek(startOfMonth(m))` to `endOfWeek(endOfMonth(m))`. Each cell is a `motion.button`:
+   288→   288→     - Day number in a circle (emerald-filled on today).
+   289→   289→     - `ring-2 ring-emerald-500/60` on today; `ring-2 ring-primary/40` on selected.
+   290→   290→     - Out-of-month days dimmed (`opacity-40`, hover to 70).
+   291→   291→     - Up to 3 event chips per cell (colored by type: scheduled=teal, published=emerald, task=amber) with leading dot + truncated title; "+N more" overflow indicator; event count badge in top-right.
+   292→   292→     - Staggered entrance (opacity+scale, capped delay 0.18s); `aria-label` with weekday, date, and event count.
+   293→   293→  5. **Selected day panel** (right column, glass Card with primary blur): weekday name + date, or "No day selected" prompt. `AnimatePresence` swaps content on selection change. Lists all events via `ScrollArea` (max-h-80) with type `Pill`, source `Badge`, priority `Badge`, and `h:mm a` timestamp. Empty-day shows "perfect for deep work" hint.
+   294→   294→  6. **Publishing checklist** (glass Card, amber→emerald blur shifting on completion): 8 hardcoded items (Thumbnail created / Script finalized / Voice over recorded / Video edited / SEO optimized / End screen added / Cards added / Scheduled on YouTube), each with icon + `Checkbox` + strikethrough when checked. `Progress` bar (amber→emerald on completion), "X/8 done" header + dynamic status text. "Reset" button clears + toasts. Persisted to `localStorage` key `publish-checklist` via single `updateChecklist` callback.
+   295→   295→  7. **Mobile agenda** (`md:hidden` glass Card): events grouped by day, sorted ascending, each group with left border accent + `EEE, MMM d` header. Rows show dot + title + type Pill + source label + time. `ScrollArea` (max-h-28rem). `EmptyState` fallback.
+   296→   296→  - State: `currentMonth` Date, `data: CalendarResponse|null`, `loading`, `selectedDate: Date|null`, `checklist: Record<string,boolean>`. `useEffect` on `monthKey = format(currentMonth, "yyyy-MM")` fetches `/api/calendar?month=...` with cancellation flag; toast on error. Checklist loaded once from localStorage on mount, persisted on every toggle.
+   297→   297→  - Memoized: `eventsByDay` Map (YYYY-MM-DD → events[]), `days` array — rebuilt only when their deps change.
+   298→   298→  - Palette discipline: ONLY teal/emerald/amber + muted neutral — no blue, no indigo, no violet anywhere.
+   299→   299→  - Responsive: mobile-first (single col xs → summary stack sm → calendar+side grid lg → agenda takes over below md).
+   300→   300→  - Accessibility: `<button>` cells with aria-labels, `<label>` wrapping checkboxes, `focus-visible:ring-2`.
+   301→   301→- Verified:
+   302→   302→  - `bun run lint` passes with zero errors/warnings.
+   303→   303→  - `curl /api/calendar` → 200 `{events:[16 videos + 2 tasks], scheduledCount:0, publishedCount:16, taskCount:2}` (current month June 2026 — scheduled=0 because seeded scheduled card has null dueDate; published=16 because 16 videos have publishDate in June + 0 published cards).
+   304→   304→  - `curl /api/calendar?month=2026-07` → 200, 7 events (1 published card from content + 6 tasks) — confirms cross-month filtering works.
+   305→   305→  - Dev log: clean compiles, `GET /api/calendar 200 in 144ms` (cold) / ~12ms (warm), `GET / 200` consistently.
+   306→   306→  - Did NOT edit shared files (globals.css, page.tsx, layout.tsx, store.ts, api.ts, types.ts, nav.ts, icon.tsx, ui.tsx, lib/utils.ts). Only created the 2 specified files.
+   307→   307→
+   308→   308→Stage Summary:
+   309→   309→- Content Calendar section is complete and production-ready.
+   310→   310→- `/api/calendar?month=YYYY-MM` returns flat events list + 3 summary counts in ~10ms (warm).
+   311→   311→- `CalendarSection` is a dark-first, glassmorphic monthly calendar: month nav + Today button, 3 StatCards summary, custom 6×7 day grid (today ring, out-of-month dimming, max-3 chips + "+N more" overflow, color-coded by type), selected-day detail panel (type/source/priority pills + timestamps), 8-item publishing checklist persisted to localStorage with progress bar + reset, and a mobile-only agenda view (below md).
+   312→   312→- Palette stays within emerald/teal/amber (NO blue/indigo) per design system.
+   313→   313→- Files created:
+   314→   314→  - `src/app/api/calendar/route.ts` (new)
+   315→   315→  - `src/components/sections/calendar.tsx` (overwrote stub)
+   316→   316→- Ready for orchestrator; already imported as `CalendarSection` in page.tsx.
+   317→   317→
+   318→   318→---
+   319→   319→Task ID: 8-d
+   320→   320→Agent: Tasks Section Builder
+   321→   321→
+   322→   322→Task: Build the TASK MANAGEMENT section (`src/components/sections/tasks.tsx` → `TasksSection`) + REST API for tasks (`src/app/api/tasks/route.ts`, `src/app/api/tasks/[id]/route.ts`).
+   323→   323→
+   324→   324→Work Log:
+   325→   325→- Read the foundation worklog (Task 1-6, 7-a/b/c) to align with conventions: shared UI primitives (`SectionHeader`, `StatCard`, `EmptyState`, `Pill`, `Progress`), `Icon` registry, `api` helpers (`formatDate`, `colorFor`), `db` client, Prisma `Task` model (with optional `channel` + `assignee` TeamMember relations), seeded 8 tasks with priorities/categories/dueDates.
+   326→   326→- Created `src/app/api/tasks/route.ts`:
+   327→   327→  - `GET` — `db.task.findMany` with `include: { channel: {select id,name,color}, assignee: {select id,name,role,avatarUrl} }`. Supports `?status=` (todo|in_progress|done), `?priority=` (low|medium|high|urgent), `?category=` filters (all enum-validated, ignored if invalid). Ordered by `[{ dueDate: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }]` (Prisma 6 supports nulls:last on SQLite). Wrapped in `{ tasks }`. Try/catch with 500 fallback.
+   328→   328→  - `POST` — validates `title` (400 if missing). Coerces strings/numbers safely. Validates `status` (default "todo") and `priority` (default "medium"). Parses `dueDate`/`reminder` from string→Date|null. Optional `channelId` and `assigneeId` are verified to exist before wiring up (400 with descriptive error if not). Clamps `progress` to 0–100. Returns 201 with created task including relations.
+   329→   329→- Created `src/app/api/tasks/[id]/route.ts` (Next.js 16 async `params: Promise<{ id: string }>`):
+   330→   330→  - `PATCH` — only updates fields actually present in body. Re-validates `status`/`priority` enums (falls back to existing). **Smart progress auto-sync when toggling status:** setting status=done sets progress=100; status=todo resets progress=0 (if previously 100); status=in_progress sets a sensible default (30 or 80) if progress was 0 or 100. Handles `dueDate`/`reminder`/`channelId`/`assigneeId` null/empty clearing. Verifies relation existence before linking. Returns updated task with relations.
+   331→   331→  - `DELETE` — 404 if missing, otherwise delete and return `{ ok: true }`.
+   332→   332→- Created `src/components/sections/tasks.tsx` (named export `TasksSection`, `"use client"`):
+   333→   333→  - `SectionHeader` with title "Tasks", description "Stay on top of every moving piece", icon `check-square`, "New Task" action button.
+   334→   334→  - Summary strip: 4 `StatCard`s — Total Tasks (emerald/list-checks), In Progress (amber/refresh), Completed (teal/check-circle), Overdue (rose/alert-triangle). Computed from current `tasks` list — `overdue` = `dueDate < now && status !== "done"`. Staggered framer-motion delays.
+   335→   335→  - Glass filter bar: search `Input` (with leading search icon, debounced 240ms — handles title/description/category search client-side), status `Select` (All/todo/in_progress/done), priority `Select` (All + 4 priorities), category `Select` (All + distinct categories derived from current tasks). Conditional "Clear" button (only shows when filters active; otherwise shows count). List/Board view toggle pill.
+   336→   336→  - **List view (default):** grouped by status (To Do / In Progress / Done) — each group has a colored dot + label + count + divider line. Each `TaskRow` is a `Card` with: `StatusCircle` button (cycles status todo→in_progress→done→todo with optimistic PATCH and toast), clickable title (opens edit; strikethrough + muted when done), `PriorityPill` (urgent=rose+alert-triangle, high=amber+flame, medium=teal+circle-dot, low=muted+circle), category badge with folder-open icon, description preview (1-line clamp), due date with overdue/today/in-Nd/format color tone (rose/amber/emerald/muted), channel badge with colored dot + Tooltip, small `Progress` bar (only when progress > 0 and not done) with % label, reminder indicator with bell icon + Tooltip, assignee `Avatar` (gradient circle with initials, or image if avatarUrl present) with name+role Tooltip, trailing `DropdownMenu` (Edit / Cycle status / Delete) that appears on hover. Card has hover-lift shadow + border highlight; overdue rows get rose border; deleting rows get opacity-40.
+   337→   337→  - **Board view:** 3 columns (To Do / In Progress / Done) in `grid-cols-1 md:grid-cols-3`. Each column is a `Card` with gradient-tinted header (status dot + label + count pill) and a scrollable body (`max-h-[60vh]`). Each task is a motion.button card (clickable to edit) with hover-lift. Card shows: status circle (with stopPropagation so cycle doesn't trigger edit), title (strikethrough when done), priority + category pills, description (2-line clamp), progress bar (when > 0 and not done), due date with overdue tint, assignee avatar, channel indicator. Empty column shows dashed "No tasks here" placeholder.
+   338→   338→  - **Create/Edit Dialog** (`sm:max-w-2xl`, scrollable `max-h-[90vh]`): title (required, with red asterisk + autoFocus), description (Textarea), status `Select`, priority `Select`, category `Input` with `<datalist>` of existing categories (allows free typing or picking existing), progress `Slider` (0-100 step 5) with live % label + live `Progress` bar preview colored by priority, due date (native date input), reminder (native datetime-local input), channel `Select` (with "No channel" option, sourced from `/api/channels`), assignee `Select` (with "Unassigned" option, sourced from `/api/team` — disabled if team is empty). Footer: Delete (destructive, only in edit mode), Cancel, Save/Create with spinner during save.
+   339→   339→  - Empty state: distinct copy for filtered-empty ("No tasks match — try adjusting filters") vs no-tasks-at-all ("No tasks yet — create your first task"), with matching CTA button.
+   340→   340→  - Loading state: `TaskListSkeleton` with 3 shimmer groups (4/2/2 rows) using the `.shimmer` utility class.
+   341→   341→  - Quick toggle: clicking the `StatusCircle` cycles status with **optimistic update** (immediately updates local state with sensible progress defaults, fires PATCH in background, reverts on failure with toast).
+   342→   342→  - State: `tasks`, `team` (loaded once from `/api/team` with try/catch — 404 → empty array), `channels` (loaded once from `/api/channels` with try/catch), `loading`, `filters` (q/status/priority/category), `view` ("list"|"board"), `dialogOpen`, `editing`, `form`, `saving`, `deletingId`.
+   343→   343→  - Palette strictly emerald/amber/rose/teal (no blue/indigo). Dark-first glassmorphism via `glass` class on filter bar and board columns. All numbers use `tabular-nums`. Mobile-first responsive (summary 2→4 cols, filter bar stacks, board 1→3 cols, row meta wraps).
+   344→   344→  - Animations: framer-motion staggered entrance on summary cards + sections + list rows + board cards, `AnimatePresence` for row enter/exit, `layout` prop for smooth reordering when status cycles.
+   345→   345→- Verified via curl:
+   346→   346→  - `GET /api/tasks` → 200 with 8 seeded tasks (channel + assignee included, ordered by dueDate asc nulls last — "SEO optimize" with yesterday's dueDate appears first).
+   347→   347→  - `?status=done` → 1 task; `?priority=urgent` → 1 task; `?category=SEO` → 1 task (all filters work).
+   348→   348→  - `POST /api/tasks` → 201 with created task; missing title → 400 `{"error":"Task title is required"}`.
+   349→   349→  - `PATCH /api/tasks/[id]` with `{"status":"done"}` → progress auto-set to 100. PATCH with multiple fields (status, priority, reminder, progress) → all updated correctly, reminder parsed from `2026-07-10T15:30` to ISO. PATCH with `{"dueDate":null}` → dueDate cleared.
+   350→   350→  - `DELETE /api/tasks/[id]` → 200 `{"ok":true}`; second DELETE → 404 `{"error":"Task not found"}`.
+   351→   351→- Dev server log shows clean Prisma queries (BEGIN/COMMIT, INSERT, UPDATE, DELETE) and proper HTTP codes (201/200/400/404). No compile errors or warnings.
+   352→   352→- `bun run lint` passes with zero errors and zero warnings (removed an unused eslint-disable directive).
+   353→   353→- Did NOT edit any shared/foundation files. Only created the 3 specified files.
+   354→   354→
+   355→   355→Stage Summary:
+   356→   356→- Task Management section is fully functional end-to-end: premium grouped list + 3-column board with quick status cycling, comprehensive create/edit dialog (title/desc/status/priority/category/progress slider/due date/reminder/channel/assignee), search + 3 filters + view toggle + clear, summary stats with overdue detection, optimistic status cycling with toast feedback, shimmer loading, and graceful empty states.
+   357→   357→- 3 new files created: `src/components/sections/tasks.tsx`, `src/app/api/tasks/route.ts`, `src/app/api/tasks/[id]/route.ts`. No shared files modified.
+   358→   358→- API surface: `GET/POST /api/tasks` (with `?status=`, `?priority=`, `?category=` filters, ordered by dueDate asc nulls last), `PATCH/DELETE /api/tasks/[id]` (PATCH auto-syncs progress when status changes; both validate relation existence).
+   359→   359→- Gracefully handles missing `/api/team` (try/catch → empty array, assignee select disabled with "No team members" placeholder).
+   360→   360→- Palette stays within emerald/amber/rose/teal (no blue/indigo). Dark-first glassmorphism consistent with the rest of the dashboard.
+   361→   361→
+   362→   362→---
+   363→   363→Task ID: 8-a
+   364→   364→Agent: AI Assistant Section Builder
+   365→   365→
+   366→   366→Task: Build the AI ASSISTANT section — a ChatGPT-style premium AI panel with tool shortcuts (real AI via z-ai-web-dev-sdk). Backend: `/api/ai` (POST) + `/api/ai/history` (GET). Frontend: `AISection` (`src/components/sections/ai-assistant.tsx`).
+   367→   367→
+   368→   368→Work Log:
+   369→   369→- Read foundation worklog (Tasks 1-6 + 7-a/b/c/d) to absorb shared helpers (`SectionHeader`, `Pill`, `EmptyState`, `Icon` registry, `api` fetch helper, `colorFor`/`colorClasses`, `db` client), the design system (`glass`, `lift`, `shimmer`, `aurora`, emerald/amber/rose/teal/orange palette — NO blue/indigo), the `ChatMessage` Prisma model (`id`, `role`, `content`, `tool`, `createdAt`), and Next 16 API conventions (`async params`, `NextRequest`/`NextResponse`).
+   370→   370→- Verified `z-ai-web-dev-sdk@0.0.18` is installed and config lives at `/etc/.z-ai-config` (auto-discovered by `ZAI.create()`). Inspected SDK types: `chat.completions.create({messages})` returns `{choices:[{message:{content}}]}`. Confirmed `react-markdown@10.1.0` is installed for markdown rendering.
+   371→   371→- Created `src/app/api/ai/route.ts` (POST):
+   372→   372→  - Accepts `{ tool: string, input: string, history?: {role, content}[] }`. Defaults tool to `ideas`, filters history to last 12 valid turns.
+   373→   373→  - `toolConfig` map (exported) for all 14 tools: `ideas`, `titles`, `scripts`, `rewrite`, `hooks`, `descriptions`, `tags`, `keywords`, `thumbnails`, `shorts`, `trending`, `summarize`, `translate`, `seo`. Each entry has `label`, `description`, `icon`, `color`, and a tool-specific `systemPrompt`.
+   374→   374→  - System prompt assembly: persona ("You are an expert YouTube automation strategist and content writer. Be specific, practical, and high-quality. Use markdown formatting with headers and bullet points where helpful.") + tool label + tool-specific instruction, followed by the prior `history` (mapped to `user`/`assistant` roles), then the new `user` input.
+   375→   375→  - SDK call wrapped in try/catch. On success, persists both the user message and assistant reply to `ChatMessage` via `db.$transaction([create, create])` so they share a consistent timestamp. On SDK failure, returns a 200 with a friendly markdown fallback message (`"I had trouble generating that. Please try again."` + actionable tips) and `{ saved: false }` — UI never hard-crashes.
+   376→   376→  - Empty input returns 400. All errors are logged with `[ai]` prefix.
+   377→   377→  - Passes `thinking: { type: "disabled" }` to keep responses fast and deterministic.
+   378→   378→- Created `src/app/api/ai/history/route.ts` (GET): returns the last 50 `ChatMessage` rows ordered by `createdAt desc`, then reversed to ascending for natural chat scroll. Each row serialized to `{id, role, content, tool, createdAt (ISO)}`. 500 fallback returns `{messages: []}` so the client never breaks.
+   379→   379→- Created `src/components/sections/ai-assistant.tsx` (named export `AISection`, `"use client"`):
+   380→   380→  - **SectionHeader** — title "AI Assistant", description "Your AI co-pilot for every step of content creation", icon `sparkles`, action: a "Clear chat" outline Button (disabled when no messages).
+   381→   381→  - **Tool grid** — `grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-2` of 14 tool buttons, each a `motion.button` with staggered entrance (`delay: i * 0.025`), `whileHover={{ y: -2 }}`, `whileTap={{ scale: 0.97 }}`. Each renders a colored soft-bg icon tile, label, and 2-line description. Active tool gets `border-primary/60 bg-primary/5 shadow-sm` + a `motion.span` layoutId dot. Clicking selects the tool and focuses the input.
+   382→   382→  - **Chat panel** — `Card` with `glass overflow-hidden p-0 min-h-[55vh] h-[calc(100vh-22rem)] max-h-[82vh] flex flex-col`:
+   383→   383→    - Gradient header (emerald→teal→amber tint strip) with sparkles avatar, "AI Co-pilot" title, message count, and an animated "thinking" pulse when loading.
+   384→   384→    - Messages area: `flex-1 min-h-0` wrapper containing `ScrollArea` (ref to Root, then `querySelector('[data-slot=scroll-area-viewport]')` for auto-scroll on new messages). Renders an `AnimatePresence` list of `MessageBubble`s. Empty state (after history loads) shows `EmptyHero` with the active tool's icon, label, description, and 3 clickable example prompts that fill the input. While history is loading, shows a "Loading chat history…" spinner. While awaiting AI response, shows an animated 3-dot `TypingDots` bubble with a tool-colored avatar.
+   385→   385→    - Input area: `Textarea` (rows=2, auto-resize via `field-sizing-content`, `resize-none`, `max-h-40`) + icon Send Button (`arrow-up-right`). Active tool rendered as `Pill` above the input with an X button (resets to "ideas" — the API requires a tool, so a default is kept). Enter sends, Shift+Enter inserts newline. Hint text shows the kbd shortcuts on `sm+`.
+   386→   386→  - **MessageBubble** — user messages right-aligned with `bg-primary/15` bubble + `users2` avatar; assistant messages left-aligned with `glass` bubble + the tool's colored avatar, markdown rendered via `ReactMarkdown` with a manual `components` map (no `@tailwindcss/typography`): `h1/h2/h3` bold, `p` relaxed, `ul/ol` `list-disc pl-5`, `code` inline chip (`bg-muted rounded px-1`) vs fenced block (no chip — `pre` provides styling), `pre` `bg-muted/50 rounded-lg p-3 overflow-x-auto`, `strong` semibold, `a` primary underline, `blockquote` left border, `table` border-collapse. Assistant bubbles also show a small tool footer pill.
+   387→   387→  - State: `messages: ChatMessage[]`, `input`, `selectedTool` (default `"ideas"`), `loading`, `loadingHistory`. On mount, GETs `/api/ai/history` and seeds `messages`. On send: pushes user message, sets loading, POSTs to `/api/ai` with `{tool, input, history: last 12 messages}` (roles only, content only), pushes assistant reply, clears input, re-focuses. Auto-scrolls to bottom on `messages.length` / `loading` change. On fetch failure: toast + a graceful assistant fallback message.
+   388→   388→- Verified end-to-end via curl:
+   389→   389→  - `POST /api/ai` with `tool:"ideas"` and a personal-finance topic returned 200 in ~15s with a rich markdown response (8 fully-developed video ideas with target audience, hook angle, CTR rationale) and `saved:true`. Two `INSERT INTO ChatMessage` queries logged.
+   390→   390→  - `POST /api/ai` with `tool:"seo"` returned 200 in ~21s with a full SEO audit (title weaknesses, description weaknesses, suggested improvements).
+   391→   391→  - `POST /api/ai` with empty input → 400 (input required).
+   392→   392→  - `GET /api/ai/history` → 200 with `{messages:[...]}` returning the saved assistant message in ascending order.
+   393→   393→  - `GET /` → 200 cleanly. Dev log shows zero compile errors.
+   394→   394→- `bun run lint` passes with zero errors/warnings across all three new files.
+   395→   395→- Did NOT edit any shared/foundation files (globals.css, page.tsx, layout.tsx, store.ts, api.ts, types.ts, nav.ts, icon.tsx, ui.tsx). Only created the 3 specified files.
+   396→   396→
+   397→   397→Stage Summary:
+   398→   398→- AI Assistant section is fully functional end-to-end with a real LLM (z-ai-web-dev-sdk → GLM-4.5 chat completions), 14 specialized YouTube-automation tools, conversation history (last 12 turns sent for context), persistent chat log in the `ChatMessage` table, graceful error fallbacks, and a ChatGPT-style premium dark glassmorphic UI.
+   399→   399→- Frontend features: tool grid with animated selection, gradient chat card header, ScrollArea with auto-scroll-to-bottom, animated message bubbles (framer-motion enter), markdown rendering with manual styling, empty-state hero with example prompt chips, typing indicator with bouncing dots, Enter-to-send / Shift+Enter-newline, active-tool Pill with X, kbd hint, loading states for both history and AI response.
+   400→   400→- Palette stays within emerald/amber/rose/teal/orange (no blue/indigo). Dark-first, glassmorphism via `.glass`, framer-motion stagger + hover transitions, responsive 2→3→4→7 tool grid.
+   401→   401→- API surface: `POST /api/ai` (returns `{content, saved}`), `GET /api/ai/history` (returns `{messages}`).
+   402→   402→- Files created by this agent:
+   403→   403→  - `src/app/api/ai/route.ts` (new)
+   404→   404→  - `src/app/api/ai/history/route.ts` (new)
+   405→   405→  - `src/components/sections/ai-assistant.tsx` (overwrote stub)
+   406→   406→
+   407→   407→---
+   408→   408→Task ID: 9-b
+   409→   409→Agent: File Library Section Builder
+   410→   410→
+   411→   411→Task: Build the FILE LIBRARY section (`src/components/sections/files.tsx` → `FilesSection`) + REST API at `/api/files` and `/api/files/[id]` for the YT Automation Studio. Premium Notion/Drive-style file manager, dark-first, glassmorphism, emerald/amber/rose/teal/orange palette (NO blue/indigo).
+   412→   412→
+   413→   413→Work Log:
+   414→   414→- Read the foundation worklog (Tasks 1-6, 7-a/b/c/d, 8-a/b/c/d) to align with conventions: shared UI primitives (`SectionHeader`, `StatCard`, `EmptyState`, `Pill`, `Progress`), `Icon` registry (~70 lucide icons incl. `folder-open`, `file-text`, `message`, `film`, `music`, `image`, `palette`, `external-link`, `edit`, `trash`, `more-horizontal`, `clock`, `sticky-note`, `filter`, `layout-grid`, `plus`, `refresh`), `api` fetch helper, `formatDate`/`colorFor` helpers, `db` client, Next 16 API conventions (async `params: Promise<{id}>`, `NextRequest`/`NextResponse`).
+   415→   415→- Inspected the `FileAsset` Prisma model (id, name, type `script|voiceover|video|music|thumbnail|brand|logo|document`, url, size, folder, tags, notes, createdAt, updatedAt) and the seeded 8 files (1 script/24KB/Scripts, 1 voiceover/18MB/Voice Overs, 1 video/1.2GB/Videos, 1 music/4MB/Music, 1 thumbnail/820KB/Thumbnails, 1 logo/12KB/Brand Assets, 1 brand/2.1MB/Brand Assets, 1 document/88KB/Documents — 6 distinct folders).
+   416→   416→- Verified available shadcn/ui primitives (`Card`, `Button`, `Input`, `Textarea`, `Label`, `Select`, `Badge`, `Dialog`, `AlertDialog`, `Separator`, `DropdownMenu`, `ScrollArea`, `Tabs`) and confirmed `framer-motion`, `sonner` are installed.
+   417→   417→- Created `src/app/api/files/route.ts`:
+   418→   418→  - `GET` — parses `?type=` and `?folder=` query params (both treated as "all" if absent or literally `"all"`), builds a Prisma `where` filter, returns `{ files }` ordered by `createdAt desc`. Empty filter returns all files.
+   419→   419→  - `POST` — validates `name` (400 if missing/empty after trim). Validates `type` against the 8 allowed values (defaults to `"document"` if invalid/absent). Coerces strings safely. Defaults `folder` to `"General"` if empty. Persists `url`, `size`, `tags`, `notes`. Returns 201 with created file. Try/catch with 500 fallback and `[files]` console prefix.
+   420→   420→- Created `src/app/api/files/[id]/route.ts` (Next 16 — `params: Promise<{ id: string }>` awaited inside handler):
+   421→   421→  - `PATCH` — `findUnique` 404 check, then partial update of only fields present in body. `name` validated non-empty (400 if empty). `type` re-validated against the 8 allowed values (falls back to existing). `folder` empty → `"General"`. Other fields (`url`, `size`, `tags`, `notes`) coerced to string. Returns updated file.
+   422→   422→  - `DELETE` — 404 if missing, else delete and return `{ ok: true }`.
+   423→   423→- Created `src/components/sections/files.tsx` (named export `FilesSection`, `"use client"`):
+   424→   424→  - `FILE_TYPES` config map for all 8 types: each entry has `{ label, icon, color, gradient }`. Colors per spec: script=file-text/emerald, voiceover=message/amber, video=film/rose, music=music/teal, thumbnail=image/orange, brand=palette/emerald, logo=palette/amber, document=file-text/teal. Each has a soft from-color gradient for the card backdrop.
+   425→   425→  - **SectionHeader** — title "File Library", description "Every asset, neatly organized", icon `folder-open`. Actions: "Add File" primary button with `plus` icon.
+   426→   426→  - **Summary strip** — 4 `StatCard`s in `grid-cols-2 md:grid-cols-4` with color variety and staggered delays: Total Files (emerald/folder-open), Folders (teal/folder-open), Top Type (dynamic — colored by the most common type's color, showing count + type label), Media Files (rose/film — sum of video + voiceover + music + thumbnail counts).
+   427→   427→  - **Filter bar** — glass `Card` with two regions: a horizontal-scrollable chip row (`overflow-x-auto`) of `FilterChip` components for All + each of the 8 types with counts (color-coded per type, ring + soft bg on active), and a folder `Select` (with folder counts shown right-aligned in each option). Vertical `Separator` between the two regions on `lg+`. Counts/folders are derived client-side from the loaded subset.
+   428→   428→  - **Files grid** — `grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3` with `motion.div layout` + `AnimatePresence mode="popLayout"`. Each `FileCard`:
+   429→   429→    - Decorative type-colored gradient strip at the top of the card.
+   430→   430→    - Icon tile (size-12 rounded-xl, soft bg + colored icon, large size-6 lucide icon) at top-left.
+   431→   431→    - Hover actions overlay (top-right, fades in on `group-hover`): Open (`external-link`, opens `url` in new tab — toasts if no URL set), Edit (`edit`), Delete (`trash`). Each action is a `CardAction` — a small glass button with backdrop-blur and color-tinted icon. Mobile gets a fallback `DropdownMenu` (bottom-right, `lg:hidden`) with the same three actions.
+   432→   432→    - Body (clickable button → opens edit dialog): name (2-line clamp, `min-h-[2.5rem]` to keep card heights uniform), type `Pill` + size (right-aligned, tabular-nums), folder label with `folder-open` icon (truncate), tags (max 3 chips + `+N` overflow, muted background), `Separator`, created date (relative via `formatDate`) with `clock` icon + notes indicator with `sticky-note` icon.
+   433→   433→    - Staggered motion entrance (`opacity+y+scale`, delay capped at 0.4s, ease `[0.2, 0.8, 0.2, 1]`), `lift` hover.
+   434→   434→  - **Create/Edit Dialog** (`sm:max-w-lg`, scrollable body `max-h-[60vh] overflow-y-auto`): name (required, red asterisk, autoFocus), type `Select` (8 options with type-colored icons), size (Input, e.g. "24 KB"), url (Input — "file path or URL"), folder (Input with `<datalist>` of existing folders — pick existing or type new), tags (Input — comma separated, with live `Pill` preview of up to 6 tags below), `Separator`, notes (Textarea, 3 rows). Footer has conditional Delete (destructive, edit mode only — moves to deleteTarget AlertDialog), Cancel, Save (disabled while saving or if name empty, spinner while saving).
+   435→   435→  - **Delete confirmation** — `AlertDialog` with rose destructive action button, spinner while deleting. Description shows the file name in quotes.
+   436→   436→  - **Empty state** — distinct copy + CTA for "no files at all" (Add File button) vs "no files match filters" (Clear filters button).
+   437→   437→  - **Loading state** — 10 `FileSkeleton` shimmer tiles matching the card layout (icon tile + 5 placeholder lines).
+   438→   438→  - **State**: `files`, `loading`, `filters { type, folder }`, `dialogOpen`, `editing`, `form`, `saving`, `deleteTarget`, `deleting`. `load()` runs on mount + whenever `filters.type` or `filters.folder` change — builds query string from server-side filters and GETs `/api/files?...`. When opening Create, pre-fills the form's `folder` from the active folder filter and `type` from the active type filter if they're set.
+   439→   439→  - Palette discipline: ONLY emerald/amber/rose/teal/orange (NO blue/indigo). Dark-first glassmorphism via `glass` class on the filter bar, `lift` on cards for hover. All numbers use `tabular-nums`. Mobile-first responsive (2→3→4→5 cols; summary 2→4 cols; filter bar stacks on mobile).
+   440→   440→  - Animations: framer-motion staggered entrance on summary cards + grid cards, `AnimatePresence` + `layout` for smooth enter/exit/reorder when filters change.
+   441→   441→- Fixed one issue during dev: the initial `CardAction` hover class used a dynamic `"hover:" + c.soft` interpolation, which Tailwind JIT can't reliably generate. Replaced with a static `hover:bg-accent` to ensure the hover style always works.
+   442→   442→- Verified end-to-end via curl:
+   443→   443→  - `GET /api/files` → 200 with 8 seeded files ordered by `createdAt desc`.
+   444→   444→  - `GET /api/files?type=script` → 200 with 1 script file (filter works).
+   445→   445→  - `GET /api/files?folder=Brand%20Assets` → 200 with 2 brand assets (folder filter works).
+   446→   446→  - `POST /api/files` with full body → 201 (created with proper type coercion and folder defaulting).
+   447→   447→  - `POST /api/files` with missing name → 400 `{"error":"File name is required"}`.
+   448→   448→  - `PATCH /api/files/[id]` `{size, folder, tags}` → 200 (all fields updated correctly).
+   449→   449→  - `DELETE /api/files/[id]` → 200 `{"ok":true}`.
+   450→   450→  - `DELETE /api/files/[id]` again → 404 `{"error":"File not found"}`.
+   451→   451→- Dev log shows clean Prisma queries (SELECT with WHERE clauses for filters, INSERT on POST, UPDATE on PATCH, DELETE on DELETE) and proper HTTP codes (200/201/400/404). No compile errors or warnings.
+   452→   452→- `bun run lint` passes with zero errors and zero warnings across all three new files.
+   453→   453→- Did NOT edit any shared/foundation files (globals.css, page.tsx, layout.tsx, store.ts, api.ts, types.ts, nav.ts, icon.tsx, ui.tsx, lib/utils.ts, db.ts). Only created the 3 specified files.
+   454→   454→
+   455→   455→Stage Summary:
+   456→   456→- File Library section is fully functional end-to-end: list, filter by type + folder, create, edit, delete, and open URL — all with toast feedback, optimistic refresh, and a premium Notion/Drive-style dark glassmorphic UI.
+   457→   457→- API surface: `GET/POST /api/files` (with `?type=` and `?folder=` filters, ordered by `createdAt desc`), `PATCH/DELETE /api/files/[id]`. Follows Next 16 conventions, validates inputs, returns proper status codes.
+   458→   458→- UI signature: type-colored icon tiles with gradient backdrops, hover action overlay (Open/Edit/Delete), folder-aware filter sidebar with type chips + folder Select, responsive 2→5 column grid, datalist-powered folder input, animated staggered entrances with AnimatePresence for smooth filter transitions.
+   459→   459→- 3 new files created:
+   460→   460→  - `src/app/api/files/route.ts` (new)
+   461→   461→  - `src/app/api/files/[id]/route.ts` (new)
+   462→   462→  - `src/components/sections/files.tsx` (overwrote stub)
+   463→   463→- Palette stays within emerald/amber/rose/teal/orange (NO blue/indigo). Dark-first glassmorphism consistent with the rest of the dashboard. Ready for orchestrator; already imported as `FilesSection` in page.tsx.
+   464→   464→
+   465→   465→---
+   466→   466→Task ID: 9-a
+   467→   467→Agent: Team Section Builder
+   468→   468→
+   469→   469→Task: Build the TEAM section (`TeamSection`) + REST API at `/api/team` for the YT Automation Studio.
+   470→   470→
+   471→   471→Work Log:
+   472→   472→- Read foundation worklog (Tasks 1-6, 7-a/b/c/d, 8-a/b/c/d) to absorb shared helpers and conventions: `SectionHeader`/`StatCard`/`EmptyState`/`Pill`/`Progress` from `@/components/shared/ui`, `Icon` registry (`@/components/icon`), `api`/`formatMoney`/`colorFor` from `@/lib/api`, `db` Prisma client from `@/lib/db`, Next 16 async `params` API conventions, dark-first glassmorphic design system with emerald/amber/rose/teal/orange palette (NO blue/indigo).
+   473→   473→- Inspected the `TeamMember` Prisma model (id, name, role [Script Writer|Editor|Voice Artist|Thumbnail Designer|SEO|Manager], email, avatarUrl, status [active|inactive], rate Float, skills String, notes String, timestamps; `tasks Task[]` relation via "TaskAssignee" with `onDelete: SetNull`). Confirmed seed data has 5 members (Alex Rivera/Script Writer/$35, Maya Chen/Editor/$28, Jordan Lee/Voice Artist/$45, Priya Patel/Thumbnail Designer/$30, Sam Okafor/SEO/$32 — all active).
+   474→   474→- Confirmed `colorClasses` map in `@/lib/api` supports `emerald`, `amber`, `rose`, `teal`, `orange` — matching the required role-color mapping. Confirmed `Icon` registry includes all needed icons: `file-text`, `film`, `message`, `image`, `trending-up`, `users`, `users2`, `plus`, `check`, `edit`, `trash`, `refresh`, `more-horizontal`, `check-circle`, `layout-grid`, `dollar`. Only `Mail` is missing from the registry (imported directly from `lucide-react` in the component for the email fields — does NOT edit shared files).
+   475→   475→- Created `src/app/api/team/route.ts`:
+   476→   476→  - `GET` — `db.teamMember.findMany` with `include: { _count: { select: { tasks: true } }, tasks: { where: { status: { not: "done" } }, select: { id: true } } }`. Maps each row to `{...member fields, totalTasks: _count.tasks, openTasks: tasks.length}`. Ordered by `[{ status: "asc" }, { createdAt: "desc" }]` so active members surface first. Wrapped in `{ members }`. Try/catch with 500 fallback.
+   477→   477→  - `POST` — validates `name` (400 `"Member name is required"` if empty). Coerces strings/numbers safely via local helpers. Validates `role` against the 6 allowed roles (defaults to `"Manager"`), `status` against `active|inactive` (defaults to `"active"`). Clamps `rate` to non-negative. Trims email/avatarUrl/skills/notes. Returns 201 with created member.
+   478→   478→- Created `src/app/api/team/[id]/route.ts` (Next 16 async `params: Promise<{ id: string }>`):
+   479→   479→  - `PATCH` — 404 if member missing. Only updates fields actually present in body. Re-validates `role`/`status` enums (falls back to existing value if invalid). Rejects empty `name` with 400. Clamps `rate` to non-negative. Trims text fields. Returns updated member.
+   480→   480→  - `DELETE` — 404 if missing, otherwise `db.teamMember.delete`. Returns `{ ok: true }`. Tasks referencing this member via `assigneeId` are set to `null` automatically by Prisma's `onDelete: SetNull` on the `Task.assignee` relation — no manual cleanup needed.
+   481→   481→- Created `src/components/sections/team.tsx` (named export `TeamSection`, `"use client"`):
+   482→   482→  - `SectionHeader` — title "Team", description "Your creative crew — ready to scale with outsourcing", icon `users`, action: "Invite Member" primary Button with `plus` icon.
+   483→   483→  - Summary strip — 4 `StatCard`s: Total Members (emerald/users2), Active (teal/check-circle with `${inactive} inactive` hint), Roles Covered (amber/layout-grid with `of ${ROLES.length}` hint), Avg Hourly Rate (orange/dollar with `per hour` hint). Computed live from `members` state. Staggered framer-motion delays 0→0.15.
+   484→   484→  - Role filter — row of `FilterChip` buttons: "All" (emerald) + one chip per role (color/icon from `ROLE_META`). Each chip shows a count badge (live from `roleCounts` memo). Active chip = solid role color bg with white text; inactive = bordered muted. `whileHover y:-1`, `whileTap scale:0.97`, `aria-pressed`.
+   485→   485→  - Members grid — `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4`. Each card (`MemberCard`):
+   486→   486→    - Avatar (size-12, ring-2 ring-border/40) — `AvatarImage` if `avatarUrl` present, else `AvatarFallback` with `bg-gradient-to-br` per-role gradient (e.g. `from-emerald-500 to-teal-600`) + white initials (first+last).
+   487→   487→    - Name (truncate, font-semibold) + role `Pill` with role icon + role color.
+   488→   488→    - Email (mailto link, muted, hover foreground) with `Mail` lucide icon — only rendered if email non-empty.
+   489→   489→    - Status pill: active = emerald soft bg + emerald pulsing dot + "Active"; inactive = muted bg + muted dot + "Inactive".
+   490→   490→    - Rate on the right: `formatMoney(rate)` + `/hr` muted suffix, tabular-nums.
+   491→   491→    - Skills as small tags (split by comma, trimmed, filtered, max 5 with `+N` overflow).
+   492→   492→    - Task stats row: "Tasks" label + `open open · total total` (open count colored with role color when > 0). `Progress` bar (done/total %, role-colored). Footer line `done/total done · NN%` (only when totalTasks > 0).
+   493→   493→    - Edit/Delete `DropdownMenu` (appears on hover via opacity transition) with `edit` icon → Edit, `trash` icon → Delete (rose-tinted).
+   494→   494→    - Hover lift via `.lift` class; soft role-colored gradient glow in top-right corner.
+   495→   495→  - `AnimatePresence` with `mode="popLayout"` for smooth enter/exit/scale; `layout` prop for reordering when filter changes.
+   496→   496→  - Create/Edit `Dialog` (`sm:max-w-lg`): fields — name (required, red asterisk, autoFocus), role (Select with 6 roles), status (Select active/inactive), email (Input with leading Mail icon), avatarUrl (Input), rate (number Input min=0 step=0.5), skills (Input, comma separated), notes (Textarea 3 rows). Footer: Cancel + Save/Add with spinner (`refresh` icon) during save. Toast on success/failure. Reload after submit.
+   497→   497→  - Delete `AlertDialog` — rose-tinted destructive action button ("Remove"), description explains tasks will be auto-unassigned. Optimistic removal on success (filters local state); reload on failure.
+   498→   498→  - Empty state — distinct copy for no-members-at-all ("No team members yet" + invite CTA) vs filtered-empty ("No members match this role" + invite CTA).
+   499→   499→  - Loading state — 6 `MemberSkeleton` cards using `.shimmer` utility class (avatar circle, name bar, pill, status bar, 2 skill chips, progress bar).
+   500→   500→  - State: `members`, `loading`, `roleFilter` ("all" or role), `dialogOpen`, `editing` (Member|null), `form` (FormState), `saving`, `deletingId` (string|null for AlertDialog). `load()` GETs `/api/team`.
+   501→   501→  - Palette strictly emerald/amber/rose/teal/orange (NO blue/indigo). Dark-first glassmorphism via `glass`/`lift` classes. All numbers `tabular-nums`. Mobile-first responsive (summary 2→4 cols, filter chips wrap, grid 1→2→3 cols).
+   502→   502→- Verified end-to-end via curl:
+   503→   503→  - `GET /api/team` → 200 with 5 seeded members, each carrying `totalTasks: 0, openTasks: 0` (seeded tasks have no assignees). Prisma log confirms LEFT JOIN for `_count.tasks` + separate `status <> 'done'` query for open tasks.
+   504→   504→  - `POST /api/team` with full body → 201 created member; missing name → 400 `{"error":"Member name is required"}`.
+   505→   505→  - `PATCH /api/team/[id]` with `{role, rate, status, notes}` → 200 with all fields updated; `{name:"   "}` → 400 `{"error":"Member name cannot be empty"}`.
+   506→   506→  - `DELETE /api/team/[id]` → 200 `{"ok":true}`; second DELETE → 404 `{"error":"Team member not found"}`.
+   507→   507→  - Task-count integration test: assigned a todo task to Alex Rivera → team endpoint immediately showed `total=1 open=1`. Marked task `done` → showed `total=1 open=0` (correctly excludes done). Reset task back to todo + unassigned to restore seed state.
+   508→   508→  - Dev log: clean Prisma queries, `GET /api/team 200 in 8ms`, `GET / 200 in 67ms`, zero compile errors.
+   509→   509→- `bun run lint` passes with zero errors and zero warnings across all three new files.
+   510→   510→- Did NOT edit any shared/foundation files (globals.css, page.tsx, layout.tsx, store.ts, api.ts, types.ts, nav.ts, icon.tsx, ui.tsx, lib/utils.ts, db.ts, schema.prisma). Only created the 3 specified files. The existing `import { TeamSection } from "@/components/sections/team"` in `page.tsx` already wired — no edits needed.
+   511→   511→
+   512→   512→Stage Summary:
+   513→   513→- Team directory section is fully functional end-to-end: premium glassmorphic member grid with role-colored avatars (initials fallback with per-role gradient), role+status pills, email links, skills tags, task stats with progress bars, edit/delete dropdown, create/edit dialog (name/role/status/email/avatar/rate/skills/notes), AlertDialog delete confirmation, role filter chips with live counts, 4 StatCards summary, shimmer loading, and graceful empty states.
+   514→   514→- 3 new files created: `src/components/sections/team.tsx` (overwrote stub), `src/app/api/team/route.ts` (new), `src/app/api/team/[id]/route.ts` (new). No shared files modified.
+   515→   515→- API surface: `GET /api/team` (returns `{members}` with `totalTasks` + `openTasks` per member, ordered by status then createdAt desc), `POST /api/team` (validates name + role/status enums, clamps rate), `PATCH /api/team/[id]` (partial update, 404 if missing, 400 if name empty), `DELETE /api/team/[id]` (404 if missing; tasks auto-unassigned via Prisma `onDelete: SetNull`).
+   516→   516→- Palette stays within emerald/amber/rose/teal/orange (NO blue/indigo). Dark-first, glassmorphism via `.glass`/`.lift`, framer-motion staggered entrance + popLayout exit, responsive 1→2→3 col grid.
+   517→   517→- Ready for orchestrator; already imported as `TeamSection` in page.tsx.
+   518→   518→
+   519→   519→---
+   520→   520→Task ID: 9-c
+   521→   521→Agent: Finance Section Builder
+   522→   522→
+   523→   523→Task: Build the FINANCE section (`FinanceSection` in `src/components/sections/finance.tsx`) + REST API at `/api/finance` (GET with computed summary + POST) and `/api/finance/[id]` (PATCH + DELETE).
+   524→   524→
+   525→   525→Work Log:
+   526→   526→- Read foundation worklog (Tasks 1-6 + 7-a/b/c/d + 8-a/c/d) to absorb shared helpers (`SectionHeader`, `StatCard`, `EmptyState`, `Pill`), `Icon` registry (~70 lucide icons), `api`/`formatMoney`/`formatCompactMoney`/`formatDate` helpers, `db` client, Prisma `Transaction` schema (`type` income|expense, `category` adsense|sponsorship|merch|software|freelancer|equipment|tax|other|general, optional `channelId` relation), and Next 16 API conventions (async `params: Promise<{ id: string }>`, `NextRequest`/`NextResponse`). Confirmed seed: 28 transactions (AdSense per channel per month × 6 months + sponsorships + 7 expenses), all linked channels present.
+   527→   527→- Inspected existing `/api/channels/route.ts` + `/api/channels/[id]/route.ts` patterns (safe coercion, ALLOWED_* enums, 404 on missing, 500 try/catch fallback) and matched them in the new finance routes.
+   528→   528→
+   529→   529→- Created `src/app/api/finance/route.ts`:
+   530→   530→  - `GET` → `db.transaction.findMany({ include: { channel: {select id,name,color} }, orderBy: { date: "desc" } })`. Computes summary server-side in JS over the fetched list: `totalIncome`, `totalExpense`, `profit` (all rounded to 2dp), `incomeByCategory`/`expenseByCategory` as `[{category, amount}]` sorted desc, and `monthly` (last 6 months incl. current) as `[{month, income, expense, profit}]` using a `YYYY-MM` month-key map seeded from `new Date(now.getFullYear(), now.getMonth() - i, 1)` for i in 0..5. Each Transaction's Date serialized to ISO string for the client. Wrapped in `{ transactions, summary }`. Try/catch → 500 fallback.
+   531→   531→  - `POST` → validates `type` (income|expense, default income) and `category` (one of 9 allowed, default general). Validates `amount` is a finite positive number (400 `"Amount must be a positive number"` otherwise). Parses `date` (string→Date, falls back to now). Optional `channelId` verified against `db.channel.findUnique` (400 if not found). Returns 201 with created transaction including channel.
+   532→   532→
+   533→   533→- Created `src/app/api/finance/[id]/route.ts` (Next 16 async `params`):
+   534→   534→  - `PATCH` → only updates fields actually present in body. Re-validates `type`/`category` enums (falls back to existing value if invalid). Validates `amount` is positive finite (silently ignored otherwise). Parses `date`. Handles `channelId`: if non-empty string, verifies channel exists (400 if not); if empty/null, sets to null. Returns updated transaction with channel.
+   535→   535→  - `DELETE` → 404 if missing, otherwise delete and return `{ ok: true }`.
+   536→   536→
+   537→   537→- Created `src/components/sections/finance.tsx` (named export `FinanceSection`, `"use client"`). Premium Stripe-like dark-first glassmorphic finance dashboard:
+   538→   538→  1. **SectionHeader** — title "Finance", description "Track income, expenses, and profit across your studio", icon `wallet`. Actions: "Add Transaction" button (emerald primary).
+   539→   539→  2. **Summary strip** — 4 `StatCard`s: Total Income (emerald, `arrow-up-right`), Total Expense (rose, `arrow-down-right`), Net Profit (amber, `dollar`), Margin % (teal, `gauge`). Each delta computed from last 2 months of the `monthly` summary (income/expense/profit % change MoM; margin delta = current margin − prev margin in pp). Hint shows last-month value with `formatCompactMoney`. Staggered delays 0/0.05/0.1/0.15.
+   540→   540→  3. **Charts row** (`grid-cols-1 lg:grid-cols-3`):
+   541→   541→     - **Monthly P&L area chart** (Card `lg:col-span-2`, h-64): recharts `AreaChart` with 3 areas — Income (emerald `#10b981`), Expense (rose `#f43f5e`), Profit (amber `#f59e0b`). Each area uses a `<defs>` linearGradient fill (top 28-35% opacity → 0). `CartesianGrid` with `strokeOpacity 0.08` + horizontal-only dashes. `XAxis` = month label, `YAxis` = compact-money tick formatter. Custom `ChartTooltip` (glass-strong, colored dots, tabular-nums). Inline legend dots in the card header.
+   542→   542→     - **Income by Category donut** (Card, 1 col): recharts `PieChart` with `innerRadius 56 / outerRadius 84 / paddingAngle 2`. Each `Cell` filled by `categoryHex(category)` (adsense=emerald, sponsorship=amber, merch=teal, software=rose, freelancer=orange, equipment=teal, tax=rose, other/general=zinc-muted). Center overlay shows "Income" + `formatCompactMoney(total)` in emerald. Below: top-5 legend rows with dot, label, $ amount, and % share. Empty-state copy when no income.
+   543→   543→  4. **Second charts row** (`grid-cols-1 lg:grid-cols-3`):
+   544→   544→     - **Expense by Category donut** — same donut pattern, rose accent in center.
+   545→   545→     - **This Month report card** — small glass card with amber blur accent, "This Month" header + `bar-chart-3` icon tile, then 3 rows (Income emerald / Expense rose / Profit amber, separated by `Separator`), then a `Sparkline` (tiny recharts `AreaChart` h-48, teal gradient, monthly income trend), then a caption "Income trend · 6 months".
+   546→   546→     - **6-Month Trend bar chart** (hidden on `< lg`): recharts `BarChart` of monthly profit per Cell colored teal (positive) or rose (negative), rounded top corners, compact-money Y axis, custom tooltip with cursor highlight.
+   547→   547→  5. **Filter bar** (glass Card, sticky-ish): `filter` icon + Tabs (All/Income/Expense) for type, `Select` for category (All + 9 categories), search `Input` with leading search icon (filters description + category label), conditional "Clear" button (only when filters active), and a "X of Y" count display on `md+`.
+   548→   548→  6. **Transactions table** (glass Card): header row with title + count badge. `ScrollArea` `max-h-[28rem]` containing a `Table` with columns Date / Description / Category (custom `CategoryPill`) / Channel (hidden `md:table-cell`, shows colored dot + name with `Tooltip`) / Type (`TypePill` income=emerald/expense=rose) / Amount (right-aligned, +green/−rose `formatMoney`) / Actions (`DropdownMenu` with Edit + Delete). Each row is a `motion.tr` with `layout` + staggered entrance (opacity+y, capped delay 0.1s) and `AnimatePresence` exit. Row click opens edit dialog; action cell `stopPropagation` so the menu doesn't trigger edit. Hover highlights the row with `bg-muted/40`. Empty state uses shared `EmptyState` with distinct copy for filtered-empty vs no-data + CTA button.
+   549→   549→  7. **Add/Edit Dialog** (`sm:max-w-lg`): type selector as two big pill-style buttons (Income emerald / Expense rose, full-width split). Then a 2-col grid: Amount (with `$` prefix, required, red asterisk, number input with `step=0.01`) + Date (native date input). Then Category `Select` (with colored dot per option). Then Description `Textarea` (rows=2, `resize-none`). Then Channel `Select` (with "No channel" first option + colored dot per channel, sourced from `/api/channels`). Footer: Delete (destructive, only in edit mode, opens the same AlertDialog), Cancel, Save (with spinner). Validates amount > 0 before submit (toast error otherwise). POST or PATCH → reload → toast.
+   550→   550→  8. **Delete confirmation** (`AlertDialog`): describes the transaction being deleted (description + signed amount), with destructive rose action button + spinner during delete.
+   551→   551→
+   552→   552→- **Category palette helper**: local `CATEGORY_HEX` (hex for recharts) + `CATEGORY_COLOR_NAME` (semantic name for `Pill`) + `CATEGORY_LABEL` (display name) + `CATEGORY_OPTIONS` (the 9-key enum array for selects). A local `CategoryPill` renders muted-style inline span for "other"/"general" (since `colorClasses` map has no "muted" key) and uses shared `Pill` for the rest.
+   553→   553→- **State**: `data` (`{transactions, summary} | null`), `channels` (loaded once from `/api/channels`, non-fatal on failure), `loading`, `filters {type, category, q}`, `dialogOpen`, `editing`, `form`, `saving`, `deleteTarget`, `deleting`. `load()` GETs `/api/finance`, `loadChannels()` GETs `/api/channels` (both via the shared `api` helper). Both run on mount.
+   554→   554→- **Loading state**: `FinanceSkeleton` with `.shimmer` placeholders matching each section's layout (4 stat cards, 3 chart cards, filter bar, 2-col table+monthly).
+   555→   555→- **Filtering**: client-side `useMemo` over `data.transactions` applying type/category/q (q matches description OR category label, case-insensitive). Count badge updates live.
+   556→   556→- **Polish**: dark-first glassmorphism via `.glass` on every Card, `tabular-nums` on all numbers, mobile-first responsive (summary 2→4 cols, charts stack→3 cols, table hides channel on mobile, dialog is single-column on mobile), framer-motion staggered entrance + layout animation on rows, accessible semantic structure (`Table`/`TableHeader`/`TableBody`/`TableRow`/`TableCell`, `aria-label` on icon-only buttons, `Label` htmlFor), custom scrollbar via `ScrollArea`. Palette strictly emerald/amber/rose/teal/orange + neutral muted (NO blue/indigo).
+   557→   557→
+   558→   558→- Verified via curl:
+   559→   559→  - `GET /api/finance` → 200 in 15ms, returning 28 transactions (ordered by date desc — Notion Plus 2026-06-28 first, AdSense Jan last) + summary with `totalIncome $52,245.62`, `totalExpense $4,207.98`, `profit $48,037.64`, `incomeByCategory` [adsense $47,145.62, sponsorship $5,100], `expenseByCategory` [tax $2,100, equipment $1,299, freelancer $700, software $108.98], `monthly` [{Jan…Jun} with income/expense/profit per month — May & June have expenses, others don't].
+   560→   560→  - `POST /api/finance` with `{type:"income", category:"merch", amount:250, description:"T-shirt sales", date:"2026-06-29"}` → 201 with created id and channel=null.
+   561→   561→  - `POST /api/finance` with `{amount:-5}` → 400 `"Amount must be a positive number"`.
+   562→   562→  - `PATCH /api/finance/[id]` with `{amount:275.50, description:"T-shirt sales (updated)"}` → 200, amount returned as `275.5` (rounded to 2dp).
+   563→   563→  - `DELETE /api/finance/[id]` → 200 `{ok:true}`; second DELETE → 404 `"Transaction not found"`.
+   564→   564→- Dev log shows `GET /api/finance 200 in 15ms (compile: 3ms, render: 12ms)` cleanly with the Prisma `SELECT Transaction … ORDER BY date DESC` + `SELECT Channel WHERE id IN (?,?,?)` queries — single N+1-safe channel hydration. `GET / 200` consistently. Zero compile errors or warnings.
+   565→   565→- `bun run lint` passes with zero errors and zero warnings across all 3 new files.
+   566→   566→- Did NOT edit any shared/foundation files (globals.css, page.tsx, layout.tsx, store.ts, api.ts, types.ts, nav.ts, icon.tsx, ui.tsx, lib/utils.ts). Only created the 3 specified files: `src/app/api/finance/route.ts`, `src/app/api/finance/[id]/route.ts`, `src/components/sections/finance.tsx` (overwrote stub).
+   567→   567→
+   568→   568→Stage Summary:
+   569→   569→- Finance section is fully functional end-to-end: premium Stripe-like dark-first glassmorphic dashboard with 4 stat cards (income/expense/profit/margin % with MoM deltas), 3 charts (Monthly P&L area chart with income/expense/profit gradient areas, Income by Category donut, Expense by Category donut — each with center total + top-5 legend), This-Month report card with sparkline, 6-month profit bar chart, filter bar (Tabs type + Select category + search + clear + count), premium transactions table (click-to-edit rows, dropdown delete, channel hidden on mobile, signed colored amounts, hover highlight, framer-motion enter/exit + layout), and a comprehensive Add/Edit Dialog (pill-style type toggle, required amount with $ prefix, category select with colored dots, description textarea, optional channel select) plus an AlertDialog delete confirmation.
+   570→   570→- API surface: `GET/POST /api/finance` (GET computes summary server-side in JS over the fetched transactions — totals + per-category buckets + 6-month monthly buckets; POST validates amount > 0 + enum values + channel existence), `PATCH/DELETE /api/finance/[id]` (PATCH is partial-update with enum re-validation + null channelId clearing + channel existence check; DELETE 404s on missing). All routes follow Next 16 conventions (async `params`, `NextRequest`/`NextResponse`, try/catch → 500).
+   571→   571→- Palette strictly emerald/amber/rose/teal/orange + neutral muted (NO blue/indigo). Dark-first, glassmorphism via `.glass`, framer-motion stagger + hover transitions, mobile-first responsive throughout, custom ScrollArea for the transactions list.
+   572→   572→- 3 new files created: `src/components/sections/finance.tsx`, `src/app/api/finance/route.ts`, `src/app/api/finance/[id]/route.ts`. No shared files modified.
+   573→   573→- Ready for orchestrator; already imported as `FinanceSection` in page.tsx (verified at line 21 + 39).
+   574→   574→
+   575→   575→---
+   576→   576→Task ID: 9-d
+   577→   577→Agent: Goals Section Builder
+   578→   578→
+   579→   579→Task: Build the GOALS section (`GoalsSection` → `src/components/sections/goals.tsx`) + REST APIs for goals (`/api/goals`, `/api/goals/[id]`) and habits (`/api/habits`, `/api/habits/[id]`) — premium dark-first glassmorphic goals & habits tracker with progress rings and a 7-day streak grid.
+   580→   580→
+   581→   581→Work Log:
+   582→   582→- Read the foundation worklog (Tasks 1-6, 7-a/b/c/d, 8-a/b/c/d) to align with conventions: shared helpers (`SectionHeader`, `StatCard`, `EmptyState`, `Pill`, `Progress`, `Icon` registry), `api`/`formatNumber`/`formatMoney`/`colorFor` helpers, `db` client from `@/lib/db`, Next 16 `NextRequest`/`NextResponse` + `params: Promise<{ id: string }>` signature, palette emerald/amber/rose/teal/orange (NO blue/indigo), dark-first glassmorphism, `.lift`/`.shimmer` utilities, framer-motion staggered entrance + AnimatePresence.
+   583→   583→- Inspected `prisma/schema.prisma` (`Goal`: id/title/type/yearly|subscriber|revenue|upload|daily_habit/target Float/current Float/period String/unit String/color String + timestamps; `Habit`: id/name/streak Int/goal Int/history String(JSON array of ISO date strings)/color String + timestamps) and `prisma/seed.ts` (6 seeded goals covering each type; 4 seeded habits with realistic 3-7 day streaks using `last7.slice(0,n)`).
+   584→   584→- Created `src/app/api/goals/route.ts`:
+   585→   585→  - `GET` → `db.goal.findMany({ orderBy: { createdAt: "asc" } })` wrapped as `{ goals }`. 500 fallback.
+   586→   586→  - `POST` → validates `title` non-empty (400 "Goal title is required"). Coerces numbers safely. Validates `type` against `["yearly","subscriber","revenue","upload","daily_habit"]` (default "yearly") and `color` against `["emerald","amber","rose","teal","orange"]` (default "emerald"). `target`/`current` clamped to ≥0. `period` defaults to current year as string. Returns 201 with created goal.
+   587→   587→- Created `src/app/api/goals/[id]/route.ts` (Next 16 async params):
+   588→   588→  - `PATCH` → findUnique 404 check. Only touches fields present in body. `title` validated non-empty (400 if blank). `type`/`color` re-validated with fallback to existing. Returns updated goal.
+   589→   589→  - `DELETE` → 404 if missing, else deletes and returns `{ ok: true }`.
+   590→   590→- Created `src/app/api/habits/route.ts`:
+   591→   591→  - `GET` → `db.habit.findMany({ orderBy: { createdAt: "asc" } })` wrapped as `{ habits }`.
+   592→   592→  - `POST` → validates `name` non-empty (400 "Habit name is required"). `goal` clamped to 1–7 (default 7). `color` validated. New habits start with `streak: 0` and `history: "[]"`. Returns 201.
+   593→   593→- Created `src/app/api/habits/[id]/route.ts` with the **special `toggleToday` action**:
+   594→   594→  - `PATCH` → if `body.toggleToday === true`:
+   595→   595→    - Parses existing `history` JSON into a `string[]`, dedupes + sorts.
+   596→   596→    - Computes today's ISO `yyyy-mm-dd` via local-timezone helper `toISODate` (no UTC shift — important so the streak math stays aligned with the user's calendar day).
+   597→   597→    - Toggles today's date: removes if present, adds if absent.
+   598→   598→    - Recomputes `streak` via `computeStreak(historySet)` — walks consecutive days backward starting from today; if today isn't checked, starts from yesterday (today isn't over yet) so the streak doesn't break prematurely. Stops on first missing day.
+   599→   599→    - Persists `{ history: JSON.stringify(sorted), streak }` and returns updated habit.
+   600→   600→  - `PATCH` (non-toggle path) → supports `name` (validated non-empty), `goal` (1–7), `color`, `streak`, and `history` (accepts either array or JSON string; deduped + sorted on write).
+   601→   601→  - `DELETE` → 404 if missing, else deletes and returns `{ ok: true }`.
+   602→   602→- Created `src/components/sections/goals.tsx` (named export `GoalsSection`, `"use client"`):
+   603→   603→  1. **SectionHeader** — title "Goals", description "Set targets, track progress, build momentum", icon `target`. Actions: "New Habit" outline button (flame icon) + "New Goal" primary button (plus icon).
+   604→   604→  2. **Summary strip** — 4 `StatCard`s in `grid-cols-2 md:grid-cols-4` with color variety and staggered delays: Active Goals (emerald/target), Avg Completion % (amber/gauge — averaged across all goals, capped per-goal at 100%), Habits This Week (teal/check-circle — count of Mon-Sun check-ins across all habits), Longest Streak (rose/flame — max `streak` across habits). Computed via `useMemo` from `goals` + `habits`.
+   605→   605→  3. **Tabs** — "Yearly Goals" | "Daily Habits" with `TabsList` + count `Badge` on each trigger.
+   606→   606→  4. **Yearly Goals tab** — `grid-cols-1 md:grid-cols-2 gap-4` of large goal cards, each wrapped in `motion.div` with `layout` + staggered entrance and `AnimatePresence mode="popLayout"` for smooth reordering/exit:
+   607→   607→     - Header: type `Pill` (with type-specific icon: subscriber=users/teal, revenue=dollar/amber, upload=upload/rose, yearly=target/emerald, daily_habit=flame/orange) + "Achieved" pill when pct ≥ 100 + bold title (line-clamp-2) + period label with clock icon.
+   608→   608→     - Trailing `DropdownMenu` (more-horizontal): Edit / Quick +5% / Delete (rose destructive).
+   609→   609→     - Big animated `ProgressRing` (custom SVG): 132×132 circle with `strokeWidth=11`, `<defs>` linear gradient from 75%→100% opacity of the goal color hex, motion.circle animating `strokeDashoffset` from full circumference to `circ * (1 - pct/100)` over 0.9s with the standard `[0.2,0.8,0.2,1]` easing. Center shows rounded % + "complete" label. Background ring uses `currentColor` muted.
+   610→   610→     - Right column: "Progress" label + `current / target` with unit (uses `formatMoney` when `unit === "$"`, else `formatNumber` + unit label) + a `Progress` bar below.
+   611→   611→     - Quick "Update Progress": −/+ outline icon buttons (each step = 5% of target, rounded) + a clickable "Update progress" pill that turns into a number `Input` (autofocus, Enter commits, Escape cancels, blur commits) — all PATCHes via `onUpdateCurrent` with toast feedback and saving state.
+   612→   612→     - Soft colored blur in the top-right corner (uses `hexFor(goal.color)`).
+   613→   613→  5. **Daily Habits tab** — `grid-cols-1 lg:grid-cols-2 gap-4` of habit cards:
+   614→   614→     - Header: soft-colored flame icon tile + bold name + "X-day streak" (color: ≥5=rose, >0=amber, 0=muted) with separator + "done/goal this week" counter.
+   615→   615→     - Trailing `DropdownMenu`: Edit / Toggle today / Delete (rose destructive).
+   616→   616→     - 7-day week grid (Mon-Sun) computed via `getWeekDays()` (local-time Monday of current week): each cell is a button with weekday label + circle showing the day number (or a check icon if done). Done circles use the habit's soft color class; today's circle is highlighted with `ring-2 ring-primary/50` (or a colored ring + inset boxShadow when today is done). Future days are dimmed + disabled (unless already done, allowing un-check).
+   617→   617→     - Clicking any day toggles it: if the clicked day is today, calls `PATCH { toggleToday: true }`; otherwise patches the full `history` array (the toggleToday endpoint only handles today, so we send the full array for past days). Both paths use optimistic local update with revert-on-error.
+   618→   618→     - Weekly progress bar + "%" label colored by habit.color, computed as `doneThisWeek / goal * 100`.
+   619→   619→  6. **Create/Edit Goal Dialog** (`sm:max-w-lg`): title (required, red asterisk, autoFocus), type `Select` (5 types with icons), color `Select` (5 palette swatches with colored dots), target (number), current (number), period (text input, defaults to current year), unit (text input with placeholder "subs, $, videos, hours…"). Submit spinner; toast feedback; calls `load()` after success.
+   620→   620→  7. **Create/Edit Habit Dialog** (`sm:max-w-md`): name (required), goal/week `Select` (1-7 days with proper pluralization), color `Select`. Same submit pattern.
+   621→   621→  8. **Empty states** — distinct dashed-border cards for each tab: "No goals yet" with target icon + "Create goal" CTA, and "No habits tracked" with flame icon + "Create habit" CTA.
+   622→   622→  9. **Loading state** — `GoalCardSkeleton` (4 shimmer cards with ring placeholder + lines) and `HabitCardSkeleton` (4 shimmer cards with header + 7-day grid placeholder) using the `.shimmer` utility class.
+   623→   623→  10. **State**: `goals`, `habits`, `loading`, `tab` ("goals"|"habits"), `goalDialogOpen`, `habitDialogOpen`, `editingGoal`, `editingHabit`. `load()` runs on mount and after every successful create/edit, fetching `/api/goals` and `/api/habits` in parallel via `Promise.all`. Local helpers: `patchGoal`, `patchHabit`, `updateGoalCurrent`, `deleteGoal`, `toggleToday`, `toggleDay`, `deleteHabit` — all optimistic where it makes sense, with toast errors + revert.
+   624→   624→  - Palette discipline: ONLY emerald/amber/rose/teal/orange. Dark-first glassmorphism via `glass`-style `Card` + `.lift` hover. framer-motion staggered entrance on summary + cards + AnimatePresence exits. All numbers use `tabular-nums`. Mobile-first responsive (summary 2→4 cols, goal grid 1→2 cols, habit grid 1→2 cols, week grid always horizontal but compresses on small screens via `size-9 sm:size-10`).
+   625→   625→- Verified end-to-end via curl:
+   626→   626→  - `GET /api/goals` → 200 (6 seeded goals in creation order, including subscriber/revenue/upload/yearly/daily_habit types).
+   627→   627→  - `POST /api/goals` with full body → 201 created; missing `title` → 400 `{"error":"Goal title is required"}`.
+   628→   628→  - `PATCH /api/goals/[id]` `{current:500000}` → 200 (current updated correctly); reset back → 200.
+   629→   629→  - `DELETE /api/goals/[id]` → 200 `{ok:true}`; second DELETE → 404 `{"error":"Goal not found"}`.
+   630→   630→  - `GET /api/habits` → 200 (4 seeded habits with realistic streaks 3-7).
+   631→   631→  - `POST /api/habits` → 201 created.
+   632→   632→  - **`toggleToday` verified end-to-end** on the "Review analytics" habit (initial streak=3, history `["2026-06-30","2026-06-29","2026-06-28"]`):
+   633→   633→    - Toggle (remove today) → streak=2, history `["2026-06-28","2026-06-29"]` ✓ (today no longer in set, count starts from yesterday).
+   634→   634→    - Toggle again (re-add today) → streak=3, history `["2026-06-28","2026-06-29","2026-06-30"]` ✓ (today back in set, full streak restored).
+   635→   635→  - `DELETE /api/habits/[id]` → 200 `{ok:true}`.
+   636→   636→- `bun run lint` passes with zero errors/warnings. Dev server compiles cleanly (`GET /` 200). Dev log shows clean Prisma queries (BEGIN/COMMIT, INSERT, UPDATE with RETURNING, DELETE) and correct HTTP codes (200/201/400/404) for all 5 endpoints.
+   637→   637→- Did NOT edit any shared/foundation files. Only created the 5 specified files: `src/app/api/goals/route.ts`, `src/app/api/goals/[id]/route.ts`, `src/app/api/habits/route.ts`, `src/app/api/habits/[id]/route.ts`, `src/components/sections/goals.tsx` (overwrote stub).
+   638→   638→
+   639→   639→Stage Summary:
+   640→   640→- Goals section is fully functional end-to-end: list, create, edit, delete goals + habits; inline progress updates (click-to-edit + ±5% buttons); one-tap habit check-ins via the 7-day week grid (with proper optimistic UI + revert); `toggleToday` server action correctly recomputes the streak via backward day-walk that gracefully handles "today not done yet".
+   641→   641→- The signature visual is the animated `ProgressRing` — SVG circle with gradient stroke and framer-motion `strokeDashoffset` animation — alongside the streak-flame-led habit cards with their color-coded 7-day grid.
+   642→   642→- API surface: `GET/POST /api/goals`, `PATCH/DELETE /api/goals/[id]`, `GET/POST /api/habits`, `PATCH/DELETE /api/habits/[id]` (PATCH supports `toggleToday:true` to flip today's check-in and recompute streak).
+   643→   643→- 5 new files created. No changes to shared primitives, layout, or other sections.
+   644→   644→- Palette stays strictly within emerald/amber/rose/teal/orange (NO blue/indigo). Dark-first glassmorphism consistent with the rest of the dashboard.
+   645→   645→- Ready for orchestrator; `GoalsSection` is already imported in `page.tsx`.
+   646→   646→
+   647→   647→---
+   648→   648→Task ID: 10-d
+   649→   649→Agent: Extras (productivity toolkit) builder
+   650→   650→Task: Build the EXTRAS section — a premium productivity toolkit with 8 mini-tools (Motivate, Pomodoro, Notes, Bookmarks, Clipboard, Reading, Checklist, Learn), plus the supporting notes / bookmarks / reading API routes.
+   651→   651→
+   652→   652→Work Log:
+   653→   653→- Read worklog.md to confirm foundation (palette: emerald/amber/rose/teal/orange, dark-first glassmorphism, shared primitives `SectionHeader`/`EmptyState`/`Pill`/`Progress`, `Icon` registry, `api`/`formatDate`/`colorFor` helpers, Prisma models `Note`/`Bookmark`/`ReadingItem` already seeded).
+   654→   654→- Created 6 API route files following the established goals/habits pattern (NextRequest/NextResponse, `db` from `@/lib/db`, try/catch with `[route] error` logging, 404 on missing records, 400 on validation, 201 on create):
+   655→   655→  - `src/app/api/notes/route.ts`: GET (pinned first then createdAt desc via `orderBy: [{ pinned: "desc" }, { createdAt: "desc" }]`), POST { title, content, color, type, pinned } — title auto-derived from content if missing, color/type whitelisted to emerald/amber/rose/teal/orange + quick/sticky.
+   656→   656→  - `src/app/api/notes/[id]/route.ts`: PATCH (partial update of title/content/pinned/color/type, 400 on empty title), DELETE (404 if missing).
+   657→   657→  - `src/app/api/bookmarks/route.ts`: GET (createdAt desc), POST { title, url, category } — URL normalized with `https://` prefix if missing scheme, title defaults to URL.
+   658→   658→  - `src/app/api/bookmarks/[id]/route.ts`: PATCH, DELETE.
+   659→   659→  - `src/app/api/reading/route.ts`: GET (createdAt desc), POST { title, url, category, status, notes } — status whitelisted to todo/reading/done.
+   660→   660→  - `src/app/api/reading/[id]/route.ts`: PATCH, DELETE.
+   661→   661→- Built `src/components/sections/extras.tsx` (named export `ExtrasSection`, `"use client"`) — a single Tabs layout (horizontal, scrollable on mobile via `overflow-x-auto custom-scroll` wrapper) with 8 tools. Each tool wrapped in a `motion.div` entrance (`opacity/y`, `[0.2,0.8,0.2,1]` easing). Per-tab data loaded lazily via per-tab `useEffect` on mount (so opening the Notes tab fetches notes, etc.).
+   662→   662→  1. **Motivate** — hero card with rotating quote (15 hardcoded creator-focused quotes). Auto-rotates every 8s via `setInterval` with `AnimatePresence mode="wait"` crossfade (opacity/y/blur). Pause/Resume toggle + "New quote" button to manually cycle. Radial gradient backdrop (emerald + amber + rose), date header, clickable dot indicators. Pausable.
+   663→   663→  2. **Focus (Pomodoro)** — circular SVG ring countdown (260px, 14px stroke, gradient stroke per mode color). Modes: Focus 25m (emerald) / Short 5m (teal) / Long 15m (amber), selectable via segmented control. Start/Pause/Reset buttons. End-time-based timer (stored `endTime = Date.now() + secondsLeft*1000`, ticks every 250ms recompute remaining). When a focus session completes → toast "Pomodoro complete! Take a break." + increment localStorage `pomo-sessions` (auto-resets at date rollover via `pomo-date` key). When a break completes → toast "Break's over — back to focus." Side panel shows today's session count + duration reference + tip card. Subtle `animate-pulse` on the ring while running.
+   664→   664→  3. **Notes** — masonry via CSS `columns-1 sm:columns-2 lg:columns-3 xl:columns-4` with `break-inside-avoid`. Note cards colored by note.color via `inset 3px 0 0 {hex}` left border + colored type pill. Pinned notes bubble to top (with amber pin icon) using optimistic reorder + revert-on-error. Each card: title, content (line-clamp-6), color dot, pin toggle, edit, delete (all with Tooltip labels). Add/Edit dialog: title (optional), content textarea (required), color select (palette swatches), type select (quick/sticky), pinned switch.
+   665→   665→  4. **Bookmarks** — list grouped by category (sorted alpha), each group has a count Badge. Each bookmark: link icon tile, title (anchor opening new tab, hover emerald), truncated URL, delete. Search input filters by title/url/category. Add/Edit dialog (URL required + auto-normalized, title defaults to URL, free-text category).
+   666→   666→  5. **Clipboard** — localStorage `clipboard-history` (max 50, newest first). Passive `window 'copy'` listener captures `clipboardData.text` or `window.getSelection().toString()`. Each entry: copy icon tile, truncated text (line-clamp-3), time + char count, re-copy button (with check → emerald feedback), delete, "Clear all" button. Hint card "Copy any text on the page to capture it here." Counter `n / 50`.
+   667→   667→  6. **Reading** — list with status filter tabs (All / To read / Reading / Done) showing counts. Each item: category pill, title (link if URL, hover emerald), notes (line-clamp-2), click-to-cycle status pill (todo=rose/circle, reading=amber/circle-dot, done=emerald/check-circle) with optimistic update + revert, delete. Add/Edit dialog with status as 3-button segmented control + notes textarea.
+   668→   668→  7. **Checklist** — 12 hardcoded YouTube pre-publish items (hook, b-roll, captions, thumbnail, title length, description, tags, end screen, cards, chapters, playlist, pinned comment) with hint subtext. Checkboxes persisted to localStorage `yt-prepublish-checklist`. Progress bar (rose → emerald at 100%). "Reset" button clears. Completed items get a green tint + strike-through + check icon.
+   669→   669→  8. **Learn** — static curated grid of 8 resource cards (Creator Academy, Think Media, vidIQ Academy, Mr Beast interviews, Ali Abdaal, Thumbnail design, Algorithm guide, SEO fundamentals). Each card: colored icon tile (colorFor soft), category Pill, title, description (line-clamp-3), "Open resource" button → `window.open` new tab + toast. Staggered framer-motion entrance (delay = idx * 0.04).
+   670→   670→- State: per-tab `notes`/`bookmarks`/`items` + `loading` + dialog open/editing refs. Clipboard and checklist state mirrored to localStorage on every mutation. Reading status cycles optimistic-then-revert.
+   671→   671→- Palette discipline: ONLY emerald/amber/rose/teal/orange (NO blue/indigo). Dark-first glassmorphism via `Card` + `.lift` hover + colored blur orbs in the corners.
+   672→   672→- Verified end-to-end via curl (all logged in dev.log with correct Prisma queries + HTTP codes):
+   673→   673→  - `GET /api/notes` → 200 (4 seeded notes, pinned "Video idea" first).
+   674→   674→  - `POST /api/notes` → 201 created; missing title+content → 400 `{"error":"Note title or content is required"}`.
+   675→   675→  - `PATCH /api/notes/[id] {pinned:true}` → 200 (pinned flipped); `DELETE` → 200 `{ok:true}`; second `DELETE` → 404 `{"error":"Note not found"}`.
+   676→   676→  - `GET /api/bookmarks` → 200 (5 seeded bookmarks).
+   677→   677→  - `POST /api/bookmarks {url:"example.com"}` → 201 (URL normalized to `https://example.com`, title defaulted to URL).
+   678→   678→  - `PATCH /api/bookmarks/[id] {category:"Updated"}` → 200; `DELETE` → 200.
+   679→   679→  - `GET /api/reading` → 200 (4 seeded items).
+   680→   680→  - `POST /api/reading` → 201; `PATCH /api/reading/[id] {status:"done"}` → 200 (status updated); `DELETE` → 200.
+   681→   681→- `bun run lint` passes with zero errors/warnings. Dev server compiles cleanly (no module-not-found, no TS errors). All test records cleaned up after verification.
+   682→   682→- Did NOT edit any shared/foundation files. Only created the 7 specified files: 6 API routes + `src/components/sections/extras.tsx` (overwrote the stub).
+   683→   683→
+   684→   684→Stage Summary:
+   685→   685→- Extras section is a fully-functional productivity toolkit with 8 distinct mini-tools, all sharing the same dark-first glass aesthetic and emerald/amber/rose/teal/orange palette.
+   686→   686→- Signature visuals: the rotating motivational hero (radial gradient + blur crossfade), the Pomodoro SVG ring (gradient stroke + pulse-while-running + per-mode color), the masonry note cards with color-keyed left border + pin-reorder, the click-to-cycle reading status pills, and the staggered-entrance resource library grid.
+   687→   687→- Three new data-backed CRUD surfaces (notes, bookmarks, reading) + two localStorage-backed tools (clipboard history, pre-publish checklist) + two static tools (motivation quotes, learning library).
+   688→   688→- API surface: `GET/POST /api/notes`, `PATCH/DELETE /api/notes/[id]` (notes ordered pinned-first then createdAt desc), `GET/POST /api/bookmarks`, `PATCH/DELETE /api/bookmarks/[id]` (URL auto-normalized), `GET/POST /api/reading`, `PATCH/DELETE /api/reading/[id]` (status whitelisted to todo/reading/done).
+   689→   689→- 7 new files created. No changes to shared primitives, layout, or other sections. `ExtrasSection` is already imported in `page.tsx`.
+   690→   690→- Ready for orchestrator.
+   691→   691→
+   692→   692→---
+   693→   693→Task ID: 10-b
+   694→   694→Agent: Automation Section Builder
+   695→   695→
+   696→   696→Task: Build the AUTOMATION section (`AutomationSection` in `src/components/sections/automation.tsx`) + REST API at `/api/workflows` (GET + POST) and `/api/workflows/[id]` (PATCH with `toggleStage` action + DELETE).
+   697→   697→
+   698→   698→Work Log:
+   699→   699→- Read the foundation worklog (Tasks 1-6, 7-a/b/c/d, 8-a/b/c/d, 9-c/d) to absorb the shared conventions: shared helpers (`SectionHeader`, `StatCard`, `EmptyState`, `Pill`, `Progress`), the `Icon` registry (~70 lucide icons including `lightbulb`, `search`, `file-text`, `message`, `film`, `image`, `trending-up`, `upload`, `youtube`, `bar-chart-3`, `workflow`, `more-horizontal`, `play`, `pause`, `check-circle`, `activity`), `api`/`colorFor` helpers, `db` client from `@/lib/db`, Next 16 conventions (async `params: Promise<{ id: string }>`, `NextRequest`/`NextResponse`, try/catch → 500 fallback), the emerald/amber/rose/teal/orange palette discipline (NO blue/indigo), and dark-first glassmorphism via `.glass`/`.lift`/`.shimmer` utilities.
+   700→   700→- Inspected `prisma/schema.prisma` — confirmed `Workflow` model fields (`id`, `name`, `videoTitle`, `channelName`, `stages String @default("[]")` JSON-string array of `{key,label,done}`, `progress Int @default(0)`, `status String @default("active")` active|completed|paused, timestamps). Confirmed `prisma/seed.ts` seeds 4 workflows with the canonical 10-stage pipeline at varied progress (60%, 30%, 90%, 100%) using stage labels `Idea / Research / Script / Voiceover / Editing / Thumbnail / SEO / Upload / Publish / Analytics` and `key: label.toLowerCase()`.
+   701→   701→- Inspected existing `/api/team/route.ts` + `/api/team/[id]/route.ts` and `/api/finance/[id]/route.ts` patterns for safe string/number coercion, ALLOWED_* enum validation, 404-on-missing, and 500 try/catch fallback — matched them in the new workflow routes.
+   702→   702→
+   703→   703→- Created `src/app/api/workflows/route.ts`:
+   704→   704→  - Exports `STANDARD_STAGES` (10-element readonly tuple of the canonical stage labels) and `buildStagesJson()` helper that returns `JSON.stringify` of `[{key: label.toLowerCase(), label, done: false}]` for all 10 stages.
+   705→   705→  - `GET` → `db.workflow.findMany({ orderBy: { createdAt: "desc" } })` wrapped as `{ workflows }`. 500 fallback on error.
+   706→   706→  - `POST` → validates `name` non-empty (400 `"Workflow name is required"`). Coerces `videoTitle` + `channelName` safely (default `""`). Creates with `stages: buildStagesJson()`, `progress: 0`, `status: "active"`. Returns 201 with the created workflow.
+   707→   707→
+   708→   708→- Created `src/app/api/workflows/[id]/route.ts` (Next 16 async `params`):
+   709→   709→  - `parseStages(raw)` helper — defensively parses the stored JSON string into `StageEntry[]` (returns `[]` on JSON errors / non-array shape / missing required fields) so corrupt data never crashes a toggle.
+   710→   710→  - `PATCH` — finds existing workflow (404 if missing). Two paths:
+   711→   711→    - **Stage toggle path** (when `body.toggleStage` is a string): trims+lowercases the key, finds the matching stage (400 `"Stage \"X\" not found"` if absent), flips `done`, recomputes `progress = Math.round((doneCount/total)*100)`, sets `status = "completed"` if `doneCount === total && total > 0` else `"active"`. Persists the updated `stages` JSON + `progress` + `status`. Returns updated workflow.
+   712→   712→    - **Regular partial-update path**: accepts `name` (400 if blank), `videoTitle`, `channelName`, `status` (validated against `["active","completed","paused"]` with fallback to existing), `progress` (clamped 0–100, integer), and `stages` (accepts either an array or a JSON string; on write, re-derives `progress` and `status` exactly like the toggle path so the server stays the source of truth).
+   713→   713→  - `DELETE` — 404 if missing, else deletes and returns `{ ok: true }`.
+   714→   714→
+   715→   715→- Created `src/components/sections/automation.tsx` (named export `AutomationSection`, `"use client"`). Premium dark-first glassmorphic workflow pipeline visualizer:
+   716→   716→  1. **SectionHeader** — title "Automation", description "Production pipelines from idea to analytics", icon `workflow`. Actions: emerald primary "New Workflow" button with `plus` icon.
+   717→   717→  2. **Summary strip** — 4 `StatCard`s in `grid-cols-2 lg:grid-cols-4`: Active Workflows (emerald/play), Completed (teal/check-circle), Avg Progress (amber/gauge — averaged across all workflows), Total Pipelines (rose/workflow). Computed live via `useMemo` from `workflows`. Staggered framer-motion delays 0/0.05/0.1/0.15.
+   718→   718→  3. **Template explanation card** (`TemplatePipeline` component) — a `glass` card with two soft accent blurs (emerald top-right + amber bottom-left), a header with a `workflow` icon tile + "Standard pipeline" title + "10 stages every workflow ships through" caption + a secondary `Badge` "10 stages" with `list-checks` icon. Below: a horizontally scrollable (`overflow-x-auto`) static visual of the 10-stage pipeline as connected nodes — each node is a `size-10` rounded-full soft-colored circle with the stage icon and the stage label below; between nodes is a tiny inline SVG arrow with a dashed gradient line. Each node uses its semantic color from `STAGE_META` (teal/emerald/amber/orange/rose). Min-width 78px per node so the full pipeline fits on one row on mobile via horizontal scroll.
+   719→   719→  4. **Workflows list** — vertical stack of large `WorkflowCard`s wrapped in `AnimatePresence mode="popLayout"` + `motion.div layout` with staggered entrance (opacity+y, capped delay 0.25s) and exit (opacity + scale 0.98). Each card:
+   720→   720→     - Header: bold name + status `Pill` (active=emerald/play, paused=amber/pause, completed=emerald/check-circle) + videoTitle with `film` icon (truncated to 28ch) + channelName with `youtube` icon (truncated to 20ch) + a right-aligned progress cluster (`NN%` big tabular-nums + `doneCount/total done` caption) + `DropdownMenu` (`more-horizontal` trigger): Edit / Pause↔Resume / Mark completed (hidden if already completed) / Delete (rose destructive).
+   721→   721→     - A **horizontal stepper** — 10 stages as connected nodes inside `overflow-x-auto`. Each node = `size-10` circle with the stage icon (colored soft bg if done, muted bg with `border-border/60` if not). When done: a small `size-3.5` colored check badge sits at the bottom-right corner of the circle. Label below the node — bold foreground when done, semantic-color + `font-semibold` for the current/next stage (the first not-done one), muted otherwise. The **current/next stage pulses** via a framer-motion infinite ring (`scale: [1, 1.45, 1]` + `opacity: [0.3, 0, 0.3]` over 1.8s) using the stage's color. Clicking any node fires `onToggleStage` → `PATCH { toggleStage: "stageKey" }` (optimistic local update first, then server confirm). When a stage transitions from not-done → done, a brief emerald radial pulse animates outward (`opacity: 0.5→0` + `scale: 1→1.9` over 1s) on the node, plus a success toast.
+   722→   722→     - **Connector** between nodes: a tiny inline SVG — emerald gradient line (left 55% opacity → right 100% opacity `#10b981`) when both endpoints are done, otherwise a dashed muted line (`strokeDasharray="2 3"`).
+   723→   723→     - Footer: `Separator` + a status row ("Pipeline complete" | "Up next: ${label}" | "All stages done") with `activity` icon + the overall progress `%` + a `Progress` bar colored by status (completed=emerald, paused=amber, active=teal).
+   724→   724→     - Soft accent glow in the top-right corner — emerald when completed, amber when paused, teal otherwise.
+   725→   725→  5. **Create/Edit `Dialog`** (`sm:max-w-lg`): name (required, red asterisk, autoFocus, Enter submits), videoTitle (Input), channelName — when channels are loaded from `/api/channels`, renders a `Select` with a "— No channel —" option plus one `SelectItem` per channel (each prefixed with a colored dot using `colorFor(c.color).dot`); falls back to a plain `Input` if the channels endpoint fails. Submit button shows a spinning `refresh` icon while saving. Toast feedback on success/failure. Reloads after submit.
+   726→   726→  6. **Empty state** — `EmptyState` (icon `workflow`, title "No workflows yet", description + "New Workflow" CTA) wrapped in a `glass` Card.
+   727→   727→  7. **Loading state** — 3 `WorkflowSkeleton` cards using the `.shimmer` utility class (header with name+description bars, 10-circle placeholder stepper, progress bar).
+   728→   728→  - **State**: `workflows` (`Workflow[]`), `channels` (`Channel[]`, loaded once via `loadChannels()`), `loading`, `dialogOpen`, `editing` (`Workflow | null`), `saving`, `form { name, videoTitle, channelName }`, `recentlyCompleted` (`Record<string, string>` — keyed by `${workflowId}:${stageKey}` → timestamp, used to drive the emerald completion pulse animation for ~1.1s after a stage flips to done).
+   729→   729→  - **Helpers**: `parseStages(raw)` → defensive JSON parse; `normalizeStages(raw)` → re-projects the parsed stages against the canonical 10-stage order so the UI always renders a fixed-length 10-stage pipeline (any missing stages fall back to `done:false`); `stageMetaByKey(key)` → looks up `STAGE_META` (icon + color + label); `STATUS_META` → status label/color/icon map.
+   730→   730→  - **Optimistic UI**: `toggleStage` snapshots the workflow before the toggle, computes `willCompleteAll` (every stage done OR is the stage being toggled), updates local state immediately with recomputed progress/status, fires the server PATCH, and shows distinct toasts for "stage completed" vs "workflow completed 🎉". On error: reverts via `load()`. `setStatus` (pause/resume/mark-completed from the dropdown) and `remove` (delete) are also optimistic with snapshot-based revert.
+   731→   731→  - **Responsive**: summary 2→4 cols, template pipeline scrolls horizontally on mobile (each node min-w-[78px]), workflow stepper scrolls horizontally on mobile (each node min-w-[80px]) so all 10 nodes stay in a row, header collapses gracefully (title+status on top, meta wraps below on mobile, progress cluster + dropdown stay top-right). All numbers use `tabular-nums`. Custom scrollbar via `.scrollbar-thin` class.
+   732→   732→  - Palette strictly emerald/amber/rose/teal/orange (NO blue/indigo). Dark-first glassmorphism via `.glass`/`.lift`/`.shimmer`. framer-motion staggered entrance + AnimatePresence `popLayout` exit + `layout` for reordering.
+   733→   733→
+   734→   734→- Verified end-to-end via curl:
+   735→   735→  - `GET /api/workflows` → 200 in 18ms, returning 4 seeded workflows ordered by `createdAt DESC` (Discipline video pipeline 60%/active, Passive income video 30%/active, AI tools review 90%/active, Declutter routine 100%/completed). Each `stages` JSON string parses cleanly into a 10-element array of `{key,label,done}` matching the canonical pipeline.
+   736→   736→  - `POST /api/workflows` with `{}` → 400 `{"error":"Workflow name is required"}`.
+   737→   737→  - `POST /api/workflows` with `{name:"Test pipeline", videoTitle:"Test vid", channelName:"Mindful Momentum"}` → 201 with new workflow — `stages` is the 10-stage JSON all `done:false`, `progress: 0`, `status: "active"`.
+   738→   738→  - `PATCH /api/workflows/[id]` with `{toggleStage:"idea"}` on the test workflow → 200 with `progress: 10, status: "active"`, idea stage now `done: true`.
+   739→   739→  - `PATCH` again with `{toggleStage:"idea"}` → 200 with `progress: 0, status: "active"`, idea stage now `done: false` (correctly toggles back).
+   740→   740→  - **Auto-complete verified**: toggled all 10 stages of the test workflow to done one-by-one → final state `status: "completed", progress: 100` (server correctly flips status when `doneCount === total`).
+   741→   741→  - `PATCH` with regular fields `{name:"Discipline video pipeline", status:"paused"}` → 200 with both fields updated (verified the standard partial-update path). Reset back to `active` after.
+   742→   742→  - `PATCH` with `{toggleStage:"nonexistent"}` → 400 `{"error":"Stage \"nonexistent\" not found"}`.
+   743→   743→  - `PATCH` on a nonexistent workflow id → 404 `{"error":"Workflow not found"}`.
+   744→   744→  - `DELETE /api/workflows/[id]` on the test workflow → 200 `{"ok":true}`; second `DELETE` on the same id → 404 `{"error":"Workflow not found"}`.
+   745→   745→  - `GET /api/channels` → 200 with 4 channels (Wealth Wire/amber, Mindful Momentum/emerald, Calm Crafts/teal, Tech Tidbits/rose) — used by the channel `Select` in the create/edit dialog.
+   746→   746→- Dev log shows clean Prisma queries (`SELECT Workflow … ORDER BY createdAt DESC`, `INSERT Workflow`, `UPDATE Workflow SET stages/progress/status RETURNING …`, `DELETE Workflow`) and correct HTTP codes (200/201/400/404) for all 4 endpoints. `GET / 200 in 77ms (compile: 21ms)` after `touch`-ing automation.tsx confirms the page (and its imports, including the new section) recompiled cleanly with zero errors.
+   747→   747→- `bun run lint` passes with zero errors and zero warnings across all 3 new files.
+   748→   748→- Did NOT edit any shared/foundation files (globals.css, page.tsx, layout.tsx, store.ts, api.ts, types.ts, nav.ts, icon.tsx, ui.tsx, lib/utils.ts, db.ts, schema.prisma). Only created the 3 specified files: `src/app/api/workflows/route.ts` (new), `src/app/api/workflows/[id]/route.ts` (new), `src/components/sections/automation.tsx` (overwrote stub). The existing `import { AutomationSection } from "@/components/sections/automation"` in `page.tsx` (line 24) and registration in `SECTIONS` map (line 42) already wire the section — no edits needed.
+   749→   749→
+   750→   750→Stage Summary:
+   751→   751→- Automation section is fully functional end-to-end: list (4 seeded workflows), create, edit, delete, and one-tap stage toggling with optimistic UI + emerald completion pulse + auto-complete detection. The signature visual is the horizontal 10-stage stepper with per-stage icon/color, emerald gradient connectors between completed stages, a pulsing "current/next" node, and a soft emerald pulse animation when a stage flips to done.
+   752→   752→- API surface: `GET/POST /api/workflows` (GET lists newest-first; POST validates name + initializes the 10-stage pipeline all `done:false` with progress=0/status=active), `PATCH/DELETE /api/workflows/[id]` (PATCH supports `toggleStage: "stageKey"` to flip a stage's `done` flag, recompute `progress = doneCount/total * 100`, and auto-set `status="completed"` when all done; PATCH also accepts regular field updates with enum re-validation + status recompute when `stages` is provided; DELETE 404s on missing).
+   753→   753→- 3 new files created. No shared files modified.
+   754→   754→- Palette strictly emerald/amber/rose/teal/orange (NO blue/indigo). Dark-first, glassmorphism via `.glass`/`.lift`/`.shimmer`, framer-motion staggered entrance + popLayout exit + layout animation for reordering, mobile-first responsive (summary 2→4 cols, steppers scroll horizontally to keep all 10 nodes in one row).
+   755→   755→- Ready for orchestrator; `AutomationSection` is already imported in `page.tsx` (verified at line 24 + 42).
+   756→   756→
+   757→   757→---
+   758→   758→Task ID: 10-a
+   759→   759→Agent: Analytics Section Builder
+   760→   760→
+   761→   761→Task: Build the ANALYTICS section (`AnalyticsSection` → `src/components/sections/analytics.tsx`, overwrite stub) + REST API at `/api/analytics` (GET aggregator over Channel + Video). This is the signature visual section — premium YouTube Studio + Stripe-style analytics dashboard, dark-first glassmorphism, emerald/amber/rose/teal/orange palette (NO blue/indigo).
+   762→   762→
+   763→   763→Work Log:
+   764→   764→- Read the foundation worklog (Tasks 1-6, 7-a/b/c/d, 8-a/b/c/d, 9-a/b/c/d) to align with conventions: shared helpers (`SectionHeader`, `StatCard`, `EmptyState`, `Pill`, `Progress`), `Icon` registry (~70 lucide icons), `api`/`formatNumber`/`formatMoney`/`formatCompactMoney`/`colorFor` helpers, `db` client from `@/lib/db`, Next 16 `NextRequest`/`NextResponse` signature, palette emerald/amber/rose/teal/orange (NO blue/indigo), dark-first glassmorphism via `.glass`/`.glass-strong`/`.shimmer`/`.lift`, framer-motion staggered entrance + AnimatePresence. Inspected `prisma/schema.prisma` (`Channel`: subs/views/watchHours/revenue/rpm/color/niche; `Video`: views/ctr/retention/watchTime/revenue/publishDate + `channel` relation) and `prisma/seed.ts` (4 channels × 6 videos each, 4 published per channel with publishDate within last ~30 days).
+   765→   765→
+   766→   766→- Created `src/app/api/analytics/route.ts`:
+   767→   767→  - `GET` → reads optional `?channelId=` from `req.nextUrl.searchParams`. When present, scopes both `db.channel.findMany({ where: { id } })` and `db.video.findMany({ where: { channelId } })`; otherwise fetches everything. Parallel `Promise.all([channels, videos])` — single round-trip, no N+1. Channel select trims to only the fields needed (id/name/niche/color/subscribers/views/watchHours/revenue/rpm); Video include `channel: { select: { id, name, color, niche } }`.
+   768→   768→  - Computes everything in JS over the fetched rows:
+   769→   769→    - **KPIs**: `totalViews`/`totalSubscribers`/`totalRevenue`/`totalWatchTime` (sums); `avgCTR`/`avgRetention` (mean across published videos with `views > 0`); `avgRPM = totalRevenue / totalViews * 1000`; `growthPct` derived from views trend (last vs prev month, clamped 3–30%).
+   770→   770→    - **viewsTrend** (last 6 months, oldest → newest): buckets real video views by publish-month via a `YYYY-M` Map; distributes the residual `totalViews − Σvideo.views` across the 6-month window using ascending weights `[0.07, 0.09, 0.12, 0.15, 0.21, 0.36]` (most recent month gets the largest share).
+   771→   771→    - **subscribersTrend** (cumulative): most recent month = `totalSubscribers`; walk back applying `growthRate` (`subs / (1+rate)^monthsBack`) → smooth cumulative curve that lands exactly on the current total.
+   772→   772→    - **revenueByChannel**: `[{name, color, revenue, subscribers}]` sorted desc by revenue.
+   773→   773→    - **topVideos**: top 8 published videos by views (channel name/color + ctr/retention/revenue).
+   774→   774→    - **worstVideos**: bottom 5 published videos with `views > 0`.
+   775→   775→    - **performanceScatter**: every published video with engagement as `[{x: ctr, y: retention, size: views, name, channel, color}]`.
+   776→   776→    - **nicheBreakdown**: groups subs + revenue by `channel.niche` (empty → "Other"), sorted desc by subs.
+   777→   777→  - All floats rounded to 1dp (CTR/Retention) or 2dp (RPM/Revenue) on the server. Wrapped in try/catch → 500 fallback.
+   778→   778→
+   779→   779→- Created `src/components/sections/analytics.tsx` (named export `AnalyticsSection`, `"use client"`):
+   780→   780→  1. **SectionHeader** — title "Analytics", description "Deep performance insights across your channels", icon `bar-chart-3`. Actions: a `Select` channel filter (All + each channel with colored dot from `colorFor(c.color).dot`) + a "Last 6 months" `Badge` with `clock` icon.
+   781→   781→  2. **KPI grid** — 8 `StatCard`s in `grid-cols-2 sm:grid-cols-3 lg:grid-cols-4` with staggered delays 0 → 0.28s:
+   782→   782→     - Total Views (emerald/eye, real MoM delta computed client-side from `viewsTrend`)
+   783→   783→     - Subscribers (teal/users, growthPct delta)
+   784→   784→     - Avg CTR (amber/zap, no delta — only "across videos" hint)
+   785→   785→     - Avg Retention (rose/timer, "avg watch %" hint)
+   786→   786→     - Avg RPM (orange/dollar, "per 1K views" hint)
+   787→   787→     - Total Revenue (emerald/wallet, viewsDelta delta)
+   788→   788→     - Watch Time (teal/clock, "hours" hint)
+   789→   789→     - Growth (amber/trending-up, growthPct delta, "subscribers MoM" hint)
+   790→   790→  3. **Main charts row** (`grid-cols-1 lg:grid-cols-2`):
+   791→   791→     - **Views Trend** — `AreaChart` h-280, emerald gradient fill (42% → 0 opacity), smooth `monotone` curve, custom `GlassTooltip` (glass-strong card with colored dot + tabular-nums), subtle gridlines (`strokeDasharray 3 3` + `strokeOpacity 0.08` + `vertical false`), `formatNumber` Y axis, emerald glow blur in top-right corner. `activeDot` with darker emerald stroke.
+   792→   792→     - **Subscriber Growth** — `AreaChart` h-280 with teal gradient fill (same pattern), cumulative subs.
+   793→   793→  4. **Second charts row** (`grid-cols-1 lg:grid-cols-2`):
+   794→   794→     - **Revenue by Channel** — horizontal `BarChart` (`layout="vertical"`) with each `Cell` colored by `hexFor(entry.color)`, rounded right corners (`radius={[0,6,6,0]}`), `formatCompactMoney` X axis, hover cursor highlight (`fill: currentColor, fillOpacity: 0.05`), amber glow.
+   795→   795→     - **Performance Map** (signature chart) — `ScatterChart` with `XAxis`=CTR (`domain [0, dataMax+2]`), `YAxis`=Retention (`domain [0, 100]`), `ZAxis`=views (bubble size range `[60, 640]`). One `<Scatter>` per channel — `scatterGroups` `useMemo` groups points by `channel__color` key so each channel becomes its own colored series with 72% opacity. Custom `ScatterTooltip` showing video title, channel dot, and a 2-col grid of CTR/Retention/Views. `Legend` at bottom with circle icons + 11px text. Rose glow corner.
+   796→   796→  5. **Niche Breakdown** — donut `PieChart` (`innerRadius 56 / outerRadius 88 / paddingAngle 2 / stroke none`) cycling through `["#10b981","#f59e0b","#f43f5e","#14b8a6","#f97316"]`. Center overlay shows "Total" + `formatNumber(totalSubscribers)` in emerald. Below: legend rows with colored dot, niche name, sub count, % share. Teal glow corner.
+   797→   797→  6. **Top Performing Videos** — `lg:col-span-2` Card with `ScrollArea` (`max-h-[420px]`). Each row: rank tile (#1 = amber `trophy` icon in amber-tinted bg, rest = muted number), title (truncate), channel `Pill` (channelColor), then inline stats (views, CTR, ret, revenue in emerald). `Progress` bar below each row sized by `views / maxTopViews * 100`, colored amber for #1 or by channel color otherwise. Top row has `border-amber-500/40 bg-amber-500/5` highlight. Staggered framer-motion entrance (delay capped at 0.3s).
+   798→   798→  7. **Needs Attention** (worst 5) — `grid-cols-1 sm:grid-cols-2 lg:grid-cols-5` of rose-tinted cards (`border-rose-500/20 bg-rose-500/5`). Each card: "Attention" `Pill` (rose, alert-triangle icon), title (line-clamp-2, min-height 2.5rem), channel dot + name (truncate), big rose views number, separator, CTR + Retention footer (mt-auto for alignment). Staggered entrance.
+   799→   799→  - **ChartCardHeader** helper — reusable header with title (ReactNode for icon + text), subtitle, trailing node, and a `Pill` (color/label/icon).
+   800→   800→  - **GlassTooltip** — generic glass-strong card tooltip used by Area/Bar/Pie charts; accepts a `formatter` and `fallbackName`.
+   801→   801→  - **ScatterTooltip** — specialized tooltip showing the scatter point's video name + channel + a 2-col CTR/Retention/Views grid.
+   802→   802→  - **ChartEmpty** — graceful empty state (icon tile + muted message) for charts with no data (e.g., filtered to a channel with no published videos).
+   803→   803→  - **AnalyticsSkeleton** — shimmer placeholders matching each section's layout (8 stat cards, 2×2 chart cards at h-300, niche + top-videos card at h-300).
+   804→   804→  - **State**: `data: AnalyticsResponse | null`, `channels: ChannelLite[]`, `loading`, `channelFilter ("all" | channelId)`. `load()` re-fetches `/api/analytics` (with `?channelId=` when filter set) on mount + whenever `channelFilter` changes. Channel list loaded once on mount from `/api/channels` (non-fatal on failure).
+   805→   805→  - **Palette discipline**: strictly emerald/amber/rose/teal/orange — confirmed in `COLOR_HEX`, `NICHE_HEX`, all `Pill`/`StatCard` color props, and gradient stops. NO blue/indigo anywhere. Dark-first glassmorphism via `glass` Card + accent blur corners. Framer-motion staggered entrance on KPIs + top-video rows. All numbers `tabular-nums`. Mobile-first responsive (KPIs 2→3→4 cols, charts stack→2 cols, top-videos card spans 2 of 3 cols on lg, worst-videos 1→2→5 cols).
+   806→   806→
+   807→   807→- Verified end-to-end via curl:
+   808→   808→  - `GET /api/analytics` → 200 in ~15ms with full payload: 4 channels aggregated, `kpis.totalViews 14.86M`, `kpis.totalSubscribers 454K`, `kpis.avgCTR 6.9%`, `kpis.avgRetention 48.0%`, `kpis.avgRPM $3.15`, `kpis.totalRevenue $46.85K`, `kpis.growthPct 30%`, `kpis.totalWatchTime 698,400h`. `viewsTrend` returns 6 months Jan→Jun ascending (Jun peaks at 7.99M from real video views bucketed by publish month). `subscribersTrend` cumulative 122K→454K (lands exactly on total). `revenueByChannel` sorted desc (Wealth Wire $22.3K → Mindful $18.4K → Tech $6.1K → Calm $0). `topVideos` 8 entries with channel names + colors. `worstVideos` 5 entries (lowest 59K views). `performanceScatter` 16 published videos. `nicheBreakdown` 4 niches (Self Improvement 248K, Personal Finance 132K, Technology 64K, DIY & Crafts 9K).
+   809→   809→  - `GET /api/analytics?channelId=<real-id>` → 200 in ~12ms, correctly scoped to Mindful Momentum (8.4M views, 248K subs, $18.4K revenue, 4 top videos, 1 niche).
+   810→   810→  - `GET /api/analytics?channelId=<fake-id>` → 200 with all-zero KPIs and empty arrays (graceful empty-state path on the client).
+   811→   811→- Dev log: `GET /api/analytics 200 in 15ms (compile: 7ms, render: 8ms)` — clean compile, no warnings, single parallel Prisma query pair.
+   812→   812→- Browser automation (agent-browser): navigated to `/`, clicked "Analytics" sidebar button → all 7 chart sections render with no console errors or page errors (`errors` empty, `console` only shows React DevTools + HMR). Channel Select dropdown shows "All channels" + 4 channel options with colored dots. Selecting "Mindful Momentum" updates the combobox label + re-renders all charts filtered (Views Trend, Subscriber Growth, Revenue by Channel, Performance Map, Niche Breakdown, Top Performing Videos, Needs Attention all still present).
+   813→   813→- `bun run lint` passes with zero errors/warnings across both new files. `npx tsc --noEmit --skipLibCheck` shows zero errors in the 2 new files (pre-existing errors in unrelated files untouched).
+   814→   814→- Did NOT edit shared/foundation files (globals.css, page.tsx, layout.tsx, store.ts, api.ts, types.ts, nav.ts, icon.tsx, ui.tsx, lib/utils.ts, db.ts, schema.prisma). Only created the 2 specified files: `src/app/api/analytics/route.ts` (new), `src/components/sections/analytics.tsx` (overwrote stub). Already imported as `AnalyticsSection` in `page.tsx` (line 23 + 41).
+   815→   815→
+   816→   816→Stage Summary:
+   817→   817→- Analytics section is fully functional end-to-end: a premium YouTube Studio + Stripe-style analytics dashboard with 8 KPI cards (real MoM deltas where computable), 4 large charts (Views Area with emerald gradient, Subscriber Growth Area with teal gradient, Revenue by Channel horizontal Bar with per-channel colored cells, Performance Map Scatter with per-channel colored bubble series), Niche Breakdown donut with center total + legend, ranked Top-8 videos list with Progress bars + trophy highlight on #1, and a rose-tinted "Needs Attention" worst-5 grid.
+   818→   818→- Signature visual: the **Performance Map scatter** — bubble chart where each channel gets its own colored `<Scatter>` series (so the Legend maps channels → colors naturally), bubble size encodes views via `ZAxis`, and a custom glass tooltip shows video title + channel dot + a 2-col CTR/Retention/Views grid.
+   819→   819→- API surface: single `GET /api/analytics[?channelId=]` endpoint aggregates Channel + Video in one parallel `Promise.all`, computes 7 derived datasets server-side in JS (KPIs, viewsTrend, subscribersTrend, revenueByChannel, topVideos, worstVideos, performanceScatter, nicheBreakdown), returns in ~12–15ms warm.
+   820→   820→- 2 new files created: `src/app/api/analytics/route.ts`, `src/components/sections/analytics.tsx` (overwrote stub). No shared files modified.
+   821→   821→- Palette strictly emerald/amber/rose/teal/orange (NO blue/indigo). Dark-first glassmorphism via `.glass` + accent blur corners, framer-motion staggered entrance, mobile-first responsive throughout.
+   822→   822→- Ready for orchestrator; already imported as `AnalyticsSection` in `page.tsx` (verified at line 23 + 41).
+   823→   823→
+   824→   824→---
+   825→   825→Task ID: 11 (final)
+   826→   826→Agent: Main (orchestrator)
+   827→   827→Task: Lint, dev log check, fix command-palette search bug, agent-browser self-verification.
+   828→   828→
+   829→   829→Work Log:
+   830→   830→- Ran `bun run lint` → zero errors across all 16 sections + foundation.
+   831→   831→- Scanned dev.log → no runtime errors, no hydration mismatches, no module-not-found.
+   832→   832→- Bug found & fixed: `CommandDialog` (shadcn) does not forward `shouldFilter` to the inner `Command`, so cmdk's default filter hid nav items when typing a search query (showed "No results found" even though /api/search returned data). Rewrote `src/components/layout/command-palette.tsx` to compose `Dialog` + `Command` directly with `shouldFilter={false}`, so navigation stays visible while search results appear on top. Also reset query/results when palette closes.
+   833→   833→- Agent-browser end-to-end verification:
+   834→   834→  - `/` loads cleanly, dashboard renders greeting hero + 8 stat cards + charts + activity + tasks + habits.
+   835→   835→  - Navigated ALL 16 sections — zero hit the error boundary, each renders its real seeded data (Channels: Wealth Wire/Mindful Momentum; Finance: income/expense/profit + categories; Tasks: 4 stat cards + task list; AI Assistant: all 14 tools; Planner: Kanban columns; etc.).
+   836→   836→  - Command palette (⌘K) opens, global search returns real results (e.g. "mindful" → "Mindful Momentum" channel), navigation + actions work.
+   837→   837→  - CRUD verified: created a task via UI ("Browser test task"), confirmed it rendered in the list, then deleted via API (200). Full write path works.
+   838→   838→  - Mobile (390px): hamburger menu opens floating sidebar drawer; layout responsive.
+   839→   839→  - Sticky footer present ("YT Automation Studio · v1.0 · Built for creators") with keyboard hints.
+   840→   840→  - No console errors, no page errors throughout.
+   841→   841→
+   842→   842→Stage Summary:
+   843→   843→- All 16 sections complete and browser-verified interactive.
+   844→   844→- Design: dark-first premium dashboard, emerald/amber/rose/teal/orange palette (no blue/indigo), glassmorphism, aurora background, framer-motion transitions, floating sidebar, command palette, sticky footer.
+   845→   845→- Full CRUD + real AI (z-ai-web-dev-sdk) + drag-drop Kanban + charts (recharts) + responsive.
+   846→   846→- Lint clean, dev server clean, no runtime errors.
+   847→   847→
+   848→   848→---
+   849→   849→Task ID: 12 (phase-2 foundation)
+   850→   850→Agent: Main (orchestrator)
+   851→   851→Task: Add auth, new DB tables, robust infra for full-functional upgrade.
+   852→   852→
+   853→   853→Work Log:
+   854→   854→- Added Prisma models: User, Account, Session, VerificationToken (NextAuth), Script, CalendarEvent, Notification, Setting, AIHistory. Added relations on Channel (scripts, events) and Video (scripts). Updated Card stage comment to new spec (ideas|research|writing|voice|editing|thumbnail|seo|scheduled|published|archive). Pushed schema.
+   855→   855→- Installed bcryptjs. Set NEXTAUTH_SECRET + NEXTAUTH_URL in .env.
+   856→   856→- `src/lib/auth.ts`: NextAuth options (CredentialsProvider, JWT sessions, callbacks), hashPassword, getSessionUser.
+   857→   857→- API routes: `api/auth/[...nextauth]`, `api/auth/register` (zod-validated, bcrypt), `api/auth/session`.
+   858→   858→- `src/lib/server-utils.ts`: errorResponse/successResponse, parseBody (zod), requireAuth, clampString/clampNumber.
+   859→   859→- Upgraded `src/lib/api.ts`: ApiError class, automatic retry on 5xx/network (2 retries), no retry on 4xx, uploadFile helper.
+   860→   860→- Seeded: default user creator@studio.io / studio123, 3 scripts, 12 calendar events, 7 notifications, 12 settings, 4 AI history entries (`prisma/seed-auth.ts`).
+   861→   861→- Auth UI: `src/components/auth-session-provider.tsx` (SessionProvider) + `src/components/auth-gate.tsx` (premium login/register overlay with demo credentials shown). Wrapped app in layout.tsx.
+   862→   862→- Created notifications API (GET/POST: markAllRead, markRead, clearAll, create) and settings API (GET/POST key-value upsert).
+   863→   863→
+   864→   864→Stage Summary:
+   865→   865→- Auth gate shows overlay when unauthenticated; login with creator@studio.io / studio123 works.
+   866→   866→- New tables ready: scripts, calendar-events, notifications, settings, ai-history.
+   867→   867→- Infra ready (zod validation, retry, auth-protect) for subagents to use.
+   868→   868→- Shared helpers subagents MUST use:
+   869→   869→  - Server: `import { parseBody, requireAuth, errorResponse, successResponse, clampString, clampNumber } from "@/lib/server-utils"`; `import { z } from "zod"`; `import { db } from "@/lib/db"`.
+   870→   870→  - Client: `import { api, ApiError, uploadFile } from "@/lib/api"`.
+   871→   871→- Subagents should NOT re-implement auth; assume session exists when their APIs are called (but they MAY call requireAuth() to protect write endpoints).
+   872→   872→

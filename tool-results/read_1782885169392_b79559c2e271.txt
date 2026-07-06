@@ -1,0 +1,1099 @@
+     1→"use client";
+     2→
+     3→import * as React from "react";
+     4→import { motion } from "framer-motion";
+     5→import { toast } from "sonner";
+     6→
+     7→import {
+     8→  SectionHeader,
+     9→  StatCard,
+    10→  Pill,
+    11→  Progress,
+    12→} from "@/components/shared/ui";
+    13→import { Icon } from "@/components/icon";
+    14→import {
+    15→  api,
+    16→  formatNumber,
+    17→  formatMoney,
+    18→  formatCompactMoney,
+    19→  colorFor,
+    20→} from "@/lib/api";
+    21→import { cn } from "@/lib/utils";
+    22→
+    23→import { Card } from "@/components/ui/card";
+    24→import { Badge } from "@/components/ui/badge";
+    25→import {
+    26→  Select,
+    27→  SelectContent,
+    28→  SelectItem,
+    29→  SelectTrigger,
+    30→  SelectValue,
+    31→} from "@/components/ui/select";
+    32→import { ScrollArea } from "@/components/ui/scroll-area";
+    33→import { Separator } from "@/components/ui/separator";
+    34→
+    35→import {
+    36→  AreaChart,
+    37→  Area,
+    38→  BarChart,
+    39→  Bar,
+    40→  PieChart,
+    41→  Pie,
+    42→  Cell,
+    43→  ScatterChart,
+    44→  Scatter,
+    45→  XAxis,
+    46→  YAxis,
+    47→  ZAxis,
+    48→  CartesianGrid,
+    49→  Tooltip as RTooltip,
+    50→  ResponsiveContainer,
+    51→  Legend,
+    52→} from "recharts";
+    53→
+    54→// ─── Types ────────────────────────────────────────────────────────────────────
+    55→
+    56→interface ChannelLite {
+    57→  id: string;
+    58→  name: string;
+    59→  color: string;
+    60→}
+    61→
+    62→interface KPIs {
+    63→  totalViews: number;
+    64→  totalSubscribers: number;
+    65→  avgCTR: number;
+    66→  avgRetention: number;
+    67→  avgRPM: number;
+    68→  totalRevenue: number;
+    69→  totalWatchTime: number;
+    70→  growthPct: number;
+    71→}
+    72→
+    73→interface RevenueByChannel {
+    74→  name: string;
+    75→  color: string;
+    76→  revenue: number;
+    77→  subscribers: number;
+    78→}
+    79→
+    80→interface TopVideo {
+    81→  id: string;
+    82→  title: string;
+    83→  channel: string;
+    84→  channelColor: string;
+    85→  views: number;
+    86→  ctr: number;
+    87→  retention: number;
+    88→  revenue: number;
+    89→}
+    90→
+    91→interface WorstVideo {
+    92→  id: string;
+    93→  title: string;
+    94→  channel: string;
+    95→  channelColor: string;
+    96→  views: number;
+    97→  ctr: number;
+    98→  retention: number;
+    99→}
+   100→
+   101→interface ScatterPoint {
+   102→  x: number;
+   103→  y: number;
+   104→  size: number;
+   105→  name: string;
+   106→  channel: string;
+   107→  color: string;
+   108→}
+   109→
+   110→interface NicheBucket {
+   111→  niche: string;
+   112→  subs: number;
+   113→  revenue: number;
+   114→}
+   115→
+   116→interface AnalyticsResponse {
+   117→  kpis: KPIs;
+   118→  viewsTrend: { month: string; views: number }[];
+   119→  subscribersTrend: { month: string; subs: number }[];
+   120→  revenueByChannel: RevenueByChannel[];
+   121→  topVideos: TopVideo[];
+   122→  worstVideos: WorstVideo[];
+   123→  performanceScatter: ScatterPoint[];
+   124→  nicheBreakdown: NicheBucket[];
+   125→}
+   126→
+   127→// ─── Palette (strictly emerald/amber/rose/teal/orange — NO blue/indigo) ───────
+   128→
+   129→const COLOR_HEX: Record<string, string> = {
+   130→  emerald: "#10b981",
+   131→  amber: "#f59e0b",
+   132→  rose: "#f43f5e",
+   133→  teal: "#14b8a6",
+   134→  orange: "#f97316",
+   135→};
+   136→
+   137→// Cycle through the palette for niche slices (when >5 niches, repeats).
+   138→const NICHE_HEX = ["#10b981", "#f59e0b", "#f43f5e", "#14b8a6", "#f97316"];
+   139→
+   140→function hexFor(c: string): string {
+   141→  return COLOR_HEX[c] ?? "#10b981";
+   142→}
+   143→
+   144→// ─── Glass chart tooltip ──────────────────────────────────────────────────────
+   145→
+   146→interface TipEntry {
+   147→  name?: string;
+   148→  value?: number | string;
+   149→  color?: string;
+   150→}
+   151→
+   152→function GlassTooltip({
+   153→  active,
+   154→  payload,
+   155→  label,
+   156→  formatter,
+   157→  fallbackName,
+   158→}: {
+   159→  active?: boolean;
+   160→  payload?: TipEntry[];
+   161→  label?: string | number;
+   162→  formatter?: (v: number | string | undefined) => string;
+   163→  fallbackName?: string;
+   164→}) {
+   165→  if (!active || !payload || payload.length === 0) return null;
+   166→  return (
+   167→    <div className="glass-strong rounded-xl border border-border/60 px-3 py-2 shadow-xl min-w-[140px]">
+   168→      {label !== undefined && label !== "" && (
+   169→        <p className="text-xs font-semibold text-foreground mb-1.5">
+   170→          {label}
+   171→        </p>
+   172→      )}
+   173→      <div className="flex flex-col gap-1">
+   174→        {payload.map((e, i) => (
+   175→          <div
+   176→            key={i}
+   177→            className="flex items-center gap-2 text-xs tabular-nums"
+   178→          >
+   179→            {e.color && (
+   180→              <span
+   181→                className="size-2 rounded-full shrink-0"
+   182→                style={{ backgroundColor: e.color }}
+   183→              />
+   184→            )}
+   185→            <span className="text-muted-foreground">
+   186→              {e.name ?? fallbackName}
+   187→            </span>
+   188→            <span className="font-semibold text-foreground ml-auto">
+   189→              {formatter ? formatter(e.value) : String(e.value ?? "")}
+   190→            </span>
+   191→          </div>
+   192→        ))}
+   193→      </div>
+   194→    </div>
+   195→  );
+   196→}
+   197→
+   198→// ─── Scatter tooltip ──────────────────────────────────────────────────────────
+   199→
+   200→function ScatterTooltip({
+   201→  active,
+   202→  payload,
+   203→}: {
+   204→  active?: boolean;
+   205→  payload?: Array<{ payload: ScatterPoint }>;
+   206→}) {
+   207→  if (!active || !payload || payload.length === 0) return null;
+   208→  const p = payload[0].payload;
+   209→  return (
+   210→    <div className="glass-strong rounded-xl border border-border/60 px-3 py-2 shadow-xl max-w-[240px]">
+   211→      <p className="text-xs font-semibold text-foreground truncate">
+   212→        {p.name}
+   213→      </p>
+   214→      <div className="mt-1 flex items-center gap-2 text-xs">
+   215→        <span
+   216→          className="size-2 rounded-full"
+   217→          style={{ backgroundColor: hexFor(p.color) }}
+   218→        />
+   219→        <span className="text-muted-foreground truncate">{p.channel}</span>
+   220→      </div>
+   221→      <Separator className="my-1.5" />
+   222→      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs tabular-nums">
+   223→        <span className="text-muted-foreground">CTR</span>
+   224→        <span className="font-semibold text-right">{p.x.toFixed(1)}%</span>
+   225→        <span className="text-muted-foreground">Retention</span>
+   226→        <span className="font-semibold text-right">{p.y.toFixed(1)}%</span>
+   227→        <span className="text-muted-foreground">Views</span>
+   228→        <span className="font-semibold text-right">
+   229→          {formatNumber(p.size)}
+   230→        </span>
+   231→      </div>
+   232→    </div>
+   233→  );
+   234→}
+   235→
+   236→// ─── Loading skeleton ─────────────────────────────────────────────────────────
+   237→
+   238→function AnalyticsSkeleton() {
+   239→  return (
+   240→    <div className="space-y-5">
+   241→      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+   242→        {Array.from({ length: 8 }).map((_, i) => (
+   243→          <div
+   244→            key={i}
+   245→            className="shimmer h-24 rounded-2xl border border-border/60"
+   246→          />
+   247→        ))}
+   248→      </div>
+   249→      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+   250→        <div className="shimmer h-[300px] rounded-2xl border border-border/60" />
+   251→        <div className="shimmer h-[300px] rounded-2xl border border-border/60" />
+   252→      </div>
+   253→      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+   254→        <div className="shimmer h-[300px] rounded-2xl border border-border/60" />
+   255→        <div className="shimmer h-[300px] rounded-2xl border border-border/60" />
+   256→      </div>
+   257→      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+   258→        <div className="shimmer h-[300px] rounded-2xl border border-border/60" />
+   259→        <div className="shimmer h-[300px] rounded-2xl border border-border/60 lg:col-span-2" />
+   260→      </div>
+   261→    </div>
+   262→  );
+   263→}
+   264→
+   265→// ─── Empty state (no published videos / no data) ──────────────────────────────
+   266→
+   267→function ChartEmpty({ message }: { message: string }) {
+   268→  return (
+   269→    <div className="h-[260px] grid place-items-center text-center">
+   270→      <div>
+   271→        <div className="size-10 rounded-xl bg-accent grid place-items-center mb-2 mx-auto">
+   272→          <Icon name="bar-chart-3" className="size-5 text-muted-foreground" />
+   273→        </div>
+   274→        <p className="text-xs text-muted-foreground max-w-[220px]">{message}</p>
+   275→      </div>
+   276→    </div>
+   277→  );
+   278→}
+   279→
+   280→// ─── Card header helper ───────────────────────────────────────────────────────
+   281→
+   282→function ChartCardHeader({
+   283→  title,
+   284→  subtitle,
+   285→  pillColor,
+   286→  pillLabel,
+   287→  pillIcon,
+   288→  trailing,
+   289→}: {
+   290→  title: React.ReactNode;
+   291→  subtitle?: string;
+   292→  pillColor: string;
+   293→  pillLabel: string;
+   294→  pillIcon?: string;
+   295→  trailing?: React.ReactNode;
+   296→}) {
+   297→  return (
+   298→    <div className="flex items-start justify-between gap-3 mb-3">
+   299→      <div className="min-w-0">
+   300→        <h3 className="text-sm font-semibold flex items-center gap-2">
+   301→          {title}
+   302→        </h3>
+   303→        {subtitle && (
+   304→          <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
+   305→        )}
+   306→      </div>
+   307→      <div className="flex items-center gap-2 shrink-0">
+   308→        {trailing}
+   309→        <Pill color={pillColor} icon={pillIcon}>
+   310→          {pillLabel}
+   311→        </Pill>
+   312→      </div>
+   313→    </div>
+   314→  );
+   315→}
+   316→
+   317→// ─── Main component ───────────────────────────────────────────────────────────
+   318→
+   319→export function AnalyticsSection() {
+   320→  const [data, setData] = React.useState<AnalyticsResponse | null>(null);
+   321→  const [channels, setChannels] = React.useState<ChannelLite[]>([]);
+   322→  const [loading, setLoading] = React.useState(true);
+   323→  const [channelFilter, setChannelFilter] = React.useState<string>("all");
+   324→
+   325→  // Load channel list for the filter dropdown (non-fatal if it fails).
+   326→  React.useEffect(() => {
+   327→    api<{ channels: ChannelLite[] }>("/api/channels")
+   328→      .then((r) =>
+   329→        setChannels(
+   330→          r.channels.map((c) => ({ id: c.id, name: c.name, color: c.color })),
+   331→        ),
+   332→      )
+   333→      .catch(() => {
+   334→        /* non-fatal — filter stays as "all" */
+   335→      });
+   336→  }, []);
+   337→
+   338→  const load = React.useCallback(async () => {
+   339→    try {
+   340→      setLoading(true);
+   341→      const path =
+   342→        channelFilter === "all"
+   343→          ? "/api/analytics"
+   344→          : `/api/analytics?channelId=${encodeURIComponent(channelFilter)}`;
+   345→      const res = await api<AnalyticsResponse>(path);
+   346→      setData(res);
+   347→    } catch (e) {
+   348→      toast.error("Failed to load analytics", {
+   349→        description: e instanceof Error ? e.message : undefined,
+   350→      });
+   351→    } finally {
+   352→      setLoading(false);
+   353→    }
+   354→  }, [channelFilter]);
+   355→
+   356→  React.useEffect(() => {
+   357→    load();
+   358→  }, [load]);
+   359→
+   360→  // Group scatter points by channel (each becomes its own colored <Scatter>).
+   361→  const scatterGroups = React.useMemo(() => {
+   362→    const map = new Map<string, { channel: string; color: string; points: ScatterPoint[] }>();
+   363→    (data?.performanceScatter ?? []).forEach((p) => {
+   364→      const key = `${p.channel}__${p.color}`;
+   365→      if (!map.has(key)) {
+   366→        map.set(key, { channel: p.channel, color: p.color, points: [] });
+   367→      }
+   368→      map.get(key)!.points.push(p);
+   369→    });
+   370→    return Array.from(map.values());
+   371→  }, [data]);
+   372→
+   373→  // MoM views delta (last vs prev month).
+   374→  const viewsDelta = React.useMemo(() => {
+   375→    if (!data || data.viewsTrend.length < 2) return 0;
+   376→    const last = data.viewsTrend[data.viewsTrend.length - 1].views;
+   377→    const prev = data.viewsTrend[data.viewsTrend.length - 2].views;
+   378→    if (prev <= 0) return 0;
+   379→    return Math.round(((last - prev) / prev) * 100);
+   380→  }, [data]);
+   381→
+   382→  const maxTopViews = data?.topVideos?.[0]?.views ?? 1;
+   383→  const hasTop = (data?.topVideos?.length ?? 0) > 0;
+   384→  const hasScatter = (data?.performanceScatter?.length ?? 0) > 0;
+   385→  const hasNiche = (data?.nicheBreakdown?.length ?? 0) > 0;
+   386→  const hasWorst = (data?.worstVideos?.length ?? 0) > 0;
+   387→
+   388→  return (
+   389→    <div className="space-y-5">
+   390→      <SectionHeader
+   391→        title="Analytics"
+   392→        description="Deep performance insights across your channels"
+   393→        icon="bar-chart-3"
+   394→        actions={
+   395→          <>
+   396→            <Select value={channelFilter} onValueChange={setChannelFilter}>
+   397→              <SelectTrigger className="w-[180px] h-9">
+   398→                <SelectValue placeholder="All channels" />
+   399→              </SelectTrigger>
+   400→              <SelectContent>
+   401→                <SelectItem value="all">All channels</SelectItem>
+   402→                {channels.map((c) => (
+   403→                  <SelectItem key={c.id} value={c.id}>
+   404→                    <span className="flex items-center gap-2">
+   405→                      <span
+   406→                        className={cn(
+   407→                          "size-2 rounded-full",
+   408→                          colorFor(c.color).dot,
+   409→                        )}
+   410→                      />
+   411→                      {c.name}
+   412→                    </span>
+   413→                  </SelectItem>
+   414→                ))}
+   415→              </SelectContent>
+   416→            </Select>
+   417→            <Badge
+   418→              variant="outline"
+   419→              className="h-9 px-3 gap-1.5 text-muted-foreground"
+   420→            >
+   421→              <Icon name="clock" className="size-3.5" />
+   422→              Last 6 months
+   423→            </Badge>
+   424→          </>
+   425→        }
+   426→      />
+   427→
+   428→      {loading || !data ? (
+   429→        <AnalyticsSkeleton />
+   430→      ) : (
+   431→        <motion.div
+   432→          initial={{ opacity: 0, y: 8 }}
+   433→          animate={{ opacity: 1, y: 0 }}
+   434→          transition={{ duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}
+   435→          className="space-y-5"
+   436→        >
+   437→          {/* ─── KPI grid ───────────────────────────────────────────────────── */}
+   438→          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+   439→            <StatCard
+   440→              label="Total Views"
+   441→              value={formatNumber(data.kpis.totalViews)}
+   442→              icon="eye"
+   443→              color="emerald"
+   444→              delta={viewsDelta}
+   445→              hint="vs last month"
+   446→              delay={0}
+   447→            />
+   448→            <StatCard
+   449→              label="Subscribers"
+   450→              value={formatNumber(data.kpis.totalSubscribers)}
+   451→              icon="users"
+   452→              color="teal"
+   453→              delta={data.kpis.growthPct}
+   454→              hint="all channels"
+   455→              delay={0.04}
+   456→            />
+   457→            <StatCard
+   458→              label="Avg CTR"
+   459→              value={`${data.kpis.avgCTR.toFixed(1)}%`}
+   460→              icon="zap"
+   461→              color="amber"
+   462→              hint="across videos"
+   463→              delay={0.08}
+   464→            />
+   465→            <StatCard
+   466→              label="Avg Retention"
+   467→              value={`${data.kpis.avgRetention.toFixed(1)}%`}
+   468→              icon="timer"
+   469→              color="rose"
+   470→              hint="avg watch %"
+   471→              delay={0.12}
+   472→            />
+   473→            <StatCard
+   474→              label="Avg RPM"
+   475→              value={formatMoney(data.kpis.avgRPM)}
+   476→              icon="dollar"
+   477→              color="orange"
+   478→              hint="per 1K views"
+   479→              delay={0.16}
+   480→            />
+   481→            <StatCard
+   482→              label="Total Revenue"
+   483→              value={formatCompactMoney(data.kpis.totalRevenue)}
+   484→              icon="wallet"
+   485→              color="emerald"
+   486→              delta={viewsDelta}
+   487→              hint="all time"
+   488→              delay={0.2}
+   489→            />
+   490→            <StatCard
+   491→              label="Watch Time"
+   492→              value={`${formatNumber(data.kpis.totalWatchTime)}h`}
+   493→              icon="clock"
+   494→              color="teal"
+   495→              hint="hours"
+   496→              delay={0.24}
+   497→            />
+   498→            <StatCard
+   499→              label="Growth"
+   500→              value={`${data.kpis.growthPct}%`}
+   501→              icon="trending-up"
+   502→              color="amber"
+   503→              delta={data.kpis.growthPct}
+   504→              hint="subscribers MoM"
+   505→              delay={0.28}
+   506→            />
+   507→          </div>
+   508→
+   509→          {/* ─── Main charts row ────────────────────────────────────────────── */}
+   510→          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+   511→            {/* Views trend */}
+   512→            <Card className="glass p-5 border-border/60 relative overflow-hidden">
+   513→              <div className="absolute -top-12 -right-12 size-32 rounded-full bg-emerald-500/15 blur-3xl pointer-events-none" />
+   514→              <ChartCardHeader
+   515→                title="Views Trend"
+   516→                subtitle="Last 6 months"
+   517→                pillColor="emerald"
+   518→                pillLabel="Views"
+   519→                pillIcon="trending-up"
+   520→              />
+   521→              <ResponsiveContainer width="100%" height={280}>
+   522→                <AreaChart
+   523→                  data={data.viewsTrend}
+   524→                  margin={{ top: 10, right: 12, bottom: 0, left: -8 }}
+   525→                >
+   526→                  <defs>
+   527→                    <linearGradient id="g-views" x1="0" y1="0" x2="0" y2="1">
+   528→                      <stop offset="0%" stopColor="#10b981" stopOpacity={0.42} />
+   529→                      <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+   530→                    </linearGradient>
+   531→                  </defs>
+   532→                  <CartesianGrid
+   533→                    strokeDasharray="3 3"
+   534→                    stroke="currentColor"
+   535→                    strokeOpacity={0.08}
+   536→                    vertical={false}
+   537→                  />
+   538→                  <XAxis
+   539→                    dataKey="month"
+   540→                    stroke="currentColor"
+   541→                    strokeOpacity={0.4}
+   542→                    fontSize={11}
+   543→                    tickLine={false}
+   544→                    axisLine={false}
+   545→                  />
+   546→                  <YAxis
+   547→                    stroke="currentColor"
+   548→                    strokeOpacity={0.4}
+   549→                    fontSize={11}
+   550→                    tickLine={false}
+   551→                    axisLine={false}
+   552→                    width={48}
+   553→                    tickFormatter={(v) => formatNumber(Number(v))}
+   554→                  />
+   555→                  <RTooltip
+   556→                    content={
+   557→                      <GlassTooltip
+   558→                        formatter={(v) => formatNumber(Number(v))}
+   559→                        fallbackName="Views"
+   560→                      />
+   561→                    }
+   562→                    cursor={{
+   563→                      stroke: "#10b981",
+   564→                      strokeOpacity: 0.3,
+   565→                      strokeWidth: 1,
+   566→                    }}
+   567→                  />
+   568→                  <Area
+   569→                    type="monotone"
+   570→                    dataKey="views"
+   571→                    name="Views"
+   572→                    stroke="#10b981"
+   573→                    strokeWidth={2.5}
+   574→                    fill="url(#g-views)"
+   575→                    dot={{ r: 3, fill: "#10b981", strokeWidth: 0 }}
+   576→                    activeDot={{
+   577→                      r: 5,
+   578→                      fill: "#10b981",
+   579→                      stroke: "#022c22",
+   580→                      strokeWidth: 2,
+   581→                    }}
+   582→                    isAnimationActive
+   583→                  />
+   584→                </AreaChart>
+   585→              </ResponsiveContainer>
+   586→            </Card>
+   587→
+   588→            {/* Subscriber growth */}
+   589→            <Card className="glass p-5 border-border/60 relative overflow-hidden">
+   590→              <div className="absolute -top-12 -right-12 size-32 rounded-full bg-teal-500/15 blur-3xl pointer-events-none" />
+   591→              <ChartCardHeader
+   592→                title="Subscriber Growth"
+   593→                subtitle="Cumulative · last 6 months"
+   594→                pillColor="teal"
+   595→                pillLabel="Subs"
+   596→                pillIcon="users"
+   597→              />
+   598→              <ResponsiveContainer width="100%" height={280}>
+   599→                <AreaChart
+   600→                  data={data.subscribersTrend}
+   601→                  margin={{ top: 10, right: 12, bottom: 0, left: -8 }}
+   602→                >
+   603→                  <defs>
+   604→                    <linearGradient id="g-subs" x1="0" y1="0" x2="0" y2="1">
+   605→                      <stop offset="0%" stopColor="#14b8a6" stopOpacity={0.42} />
+   606→                      <stop offset="100%" stopColor="#14b8a6" stopOpacity={0} />
+   607→                    </linearGradient>
+   608→                  </defs>
+   609→                  <CartesianGrid
+   610→                    strokeDasharray="3 3"
+   611→                    stroke="currentColor"
+   612→                    strokeOpacity={0.08}
+   613→                    vertical={false}
+   614→                  />
+   615→                  <XAxis
+   616→                    dataKey="month"
+   617→                    stroke="currentColor"
+   618→                    strokeOpacity={0.4}
+   619→                    fontSize={11}
+   620→                    tickLine={false}
+   621→                    axisLine={false}
+   622→                  />
+   623→                  <YAxis
+   624→                    stroke="currentColor"
+   625→                    strokeOpacity={0.4}
+   626→                    fontSize={11}
+   627→                    tickLine={false}
+   628→                    axisLine={false}
+   629→                    width={48}
+   630→                    tickFormatter={(v) => formatNumber(Number(v))}
+   631→                  />
+   632→                  <RTooltip
+   633→                    content={
+   634→                      <GlassTooltip
+   635→                        formatter={(v) => formatNumber(Number(v))}
+   636→                        fallbackName="Subscribers"
+   637→                      />
+   638→                    }
+   639→                    cursor={{
+   640→                      stroke: "#14b8a6",
+   641→                      strokeOpacity: 0.3,
+   642→                      strokeWidth: 1,
+   643→                    }}
+   644→                  />
+   645→                  <Area
+   646→                    type="monotone"
+   647→                    dataKey="subs"
+   648→                    name="Subscribers"
+   649→                    stroke="#14b8a6"
+   650→                    strokeWidth={2.5}
+   651→                    fill="url(#g-subs)"
+   652→                    dot={{ r: 3, fill: "#14b8a6", strokeWidth: 0 }}
+   653→                    activeDot={{
+   654→                      r: 5,
+   655→                      fill: "#14b8a6",
+   656→                      stroke: "#042f2e",
+   657→                      strokeWidth: 2,
+   658→                    }}
+   659→                    isAnimationActive
+   660→                  />
+   661→                </AreaChart>
+   662→              </ResponsiveContainer>
+   663→            </Card>
+   664→          </div>
+   665→
+   666→          {/* ─── Second charts row ──────────────────────────────────────────── */}
+   667→          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+   668→            {/* Revenue by channel (horizontal bars) */}
+   669→            <Card className="glass p-5 border-border/60 relative overflow-hidden">
+   670→              <div className="absolute -top-12 -right-12 size-32 rounded-full bg-amber-500/15 blur-3xl pointer-events-none" />
+   671→              <ChartCardHeader
+   672→                title="Revenue by Channel"
+   673→                subtitle={`Total · ${formatCompactMoney(data.kpis.totalRevenue)}`}
+   674→                pillColor="amber"
+   675→                pillLabel="Revenue"
+   676→                pillIcon="dollar"
+   677→              />
+   678→              {data.revenueByChannel.length === 0 ? (
+   679→                <ChartEmpty message="No monetized channels in this view." />
+   680→              ) : (
+   681→                <ResponsiveContainer width="100%" height={280}>
+   682→                  <BarChart
+   683→                    data={data.revenueByChannel}
+   684→                    layout="vertical"
+   685→                    margin={{ top: 0, right: 16, bottom: 0, left: 8 }}
+   686→                  >
+   687→                    <CartesianGrid
+   688→                      strokeDasharray="3 3"
+   689→                      stroke="currentColor"
+   690→                      strokeOpacity={0.08}
+   691→                      horizontal={false}
+   692→                    />
+   693→                    <XAxis
+   694→                      type="number"
+   695→                      stroke="currentColor"
+   696→                      strokeOpacity={0.4}
+   697→                      fontSize={11}
+   698→                      tickLine={false}
+   699→                      axisLine={false}
+   700→                      tickFormatter={(v) => formatCompactMoney(Number(v))}
+   701→                    />
+   702→                    <YAxis
+   703→                      type="category"
+   704→                      dataKey="name"
+   705→                      stroke="currentColor"
+   706→                      strokeOpacity={0.6}
+   707→                      fontSize={11}
+   708→                      tickLine={false}
+   709→                      axisLine={false}
+   710→                      width={108}
+   711→                    />
+   712→                    <RTooltip
+   713→                      content={
+   714→                        <GlassTooltip
+   715→                          formatter={(v) => formatMoney(Number(v))}
+   716→                          fallbackName="Revenue"
+   717→                        />
+   718→                      }
+   719→                      cursor={{
+   720→                        fill: "currentColor",
+   721→                        fillOpacity: 0.05,
+   722→                      }}
+   723→                    />
+   724→                    <Bar
+   725→                      dataKey="revenue"
+   726→                      name="Revenue"
+   727→                      radius={[0, 6, 6, 0]}
+   728→                      isAnimationActive
+   729→                    >
+   730→                      {data.revenueByChannel.map((entry, i) => (
+   731→                        <Cell key={i} fill={hexFor(entry.color)} />
+   732→                      ))}
+   733→                    </Bar>
+   734→                  </BarChart>
+   735→                </ResponsiveContainer>
+   736→              )}
+   737→            </Card>
+   738→
+   739→            {/* Performance scatter */}
+   740→            <Card className="glass p-5 border-border/60 relative overflow-hidden">
+   741→              <div className="absolute -top-12 -right-12 size-32 rounded-full bg-rose-500/15 blur-3xl pointer-events-none" />
+   742→              <ChartCardHeader
+   743→                title="Performance Map"
+   744→                subtitle="CTR vs Retention · bubble size = views"
+   745→                pillColor="rose"
+   746→                pillLabel="Videos"
+   747→                pillIcon="zap"
+   748→              />
+   749→              {!hasScatter ? (
+   750→                <ChartEmpty message="No published videos with engagement data yet." />
+   751→              ) : (
+   752→                <ResponsiveContainer width="100%" height={280}>
+   753→                  <ScatterChart
+   754→                    margin={{ top: 12, right: 16, bottom: 8, left: -8 }}
+   755→                  >
+   756→                    <CartesianGrid
+   757→                      strokeDasharray="3 3"
+   758→                      stroke="currentColor"
+   759→                      strokeOpacity={0.08}
+   760→                    />
+   761→                    <XAxis
+   762→                      type="number"
+   763→                      dataKey="x"
+   764→                      name="CTR"
+   765→                      unit="%"
+   766→                      domain={[0, "dataMax + 2"]}
+   767→                      stroke="currentColor"
+   768→                      strokeOpacity={0.4}
+   769→                      fontSize={11}
+   770→                      tickLine={false}
+   771→                      axisLine={false}
+   772→                      label={{
+   773→                        value: "CTR",
+   774→                        position: "insideBottom",
+   775→                        offset: -4,
+   776→                        fontSize: 10,
+   777→                        fill: "currentColor",
+   778→                        opacity: 0.6,
+   779→                      }}
+   780→                    />
+   781→                    <YAxis
+   782→                      type="number"
+   783→                      dataKey="y"
+   784→                      name="Retention"
+   785→                      unit="%"
+   786→                      domain={[0, 100]}
+   787→                      stroke="currentColor"
+   788→                      strokeOpacity={0.4}
+   789→                      fontSize={11}
+   790→                      tickLine={false}
+   791→                      axisLine={false}
+   792→                      width={40}
+   793→                    />
+   794→                    <ZAxis
+   795→                      type="number"
+   796→                      dataKey="size"
+   797→                      range={[60, 640]}
+   798→                      name="Views"
+   799→                    />
+   800→                    <RTooltip
+   801→                      content={<ScatterTooltip />}
+   802→                      cursor={{
+   803→                        strokeDasharray: "3 3",
+   804→                        stroke: "currentColor",
+   805→                        strokeOpacity: 0.2,
+   806→                      }}
+   807→                    />
+   808→                    {scatterGroups.map((g, i) => (
+   809→                      <Scatter
+   810→                        key={i}
+   811→                        name={g.channel}
+   812→                        data={g.points}
+   813→                        fill={hexFor(g.color)}
+   814→                        fillOpacity={0.72}
+   815→                        isAnimationActive
+   816→                      />
+   817→                    ))}
+   818→                    <Legend
+   819→                      wrapperStyle={{ fontSize: 11 }}
+   820→                      iconType="circle"
+   821→                      iconSize={8}
+   822→                    />
+   823→                  </ScatterChart>
+   824→                </ResponsiveContainer>
+   825→              )}
+   826→            </Card>
+   827→          </div>
+   828→
+   829→          {/* ─── Niche breakdown + Top videos ───────────────────────────────── */}
+   830→          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+   831→            {/* Niche breakdown donut */}
+   832→            <Card className="glass p-5 border-border/60 relative overflow-hidden">
+   833→              <div className="absolute -top-12 -right-12 size-32 rounded-full bg-teal-500/15 blur-3xl pointer-events-none" />
+   834→              <ChartCardHeader
+   835→                title="Niche Breakdown"
+   836→                subtitle="Subscribers by niche"
+   837→                pillColor="teal"
+   838→                pillLabel="Niche"
+   839→                pillIcon="globe"
+   840→              />
+   841→              {!hasNiche ? (
+   842→                <ChartEmpty message="No niche data available." />
+   843→              ) : (
+   844→                <div className="flex flex-col items-center gap-3">
+   845→                  <div className="relative size-[200px]">
+   846→                    <ResponsiveContainer width="100%" height="100%">
+   847→                      <PieChart>
+   848→                        <Pie
+   849→                          data={data.nicheBreakdown}
+   850→                          dataKey="subs"
+   851→                          nameKey="niche"
+   852→                          innerRadius={56}
+   853→                          outerRadius={88}
+   854→                          paddingAngle={2}
+   855→                          stroke="none"
+   856→                          isAnimationActive
+   857→                        >
+   858→                          {data.nicheBreakdown.map((_, i) => (
+   859→                            <Cell
+   860→                              key={i}
+   861→                              fill={NICHE_HEX[i % NICHE_HEX.length]}
+   862→                            />
+   863→                          ))}
+   864→                        </Pie>
+   865→                        <RTooltip
+   866→                          content={
+   867→                            <GlassTooltip
+   868→                              formatter={(v) =>
+   869→                                `${formatNumber(Number(v))} subs`
+   870→                              }
+   871→                              fallbackName="Subscribers"
+   872→                            />
+   873→                          }
+   874→                        />
+   875→                      </PieChart>
+   876→                    </ResponsiveContainer>
+   877→                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+   878→                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+   879→                        Total
+   880→                      </span>
+   881→                      <span className="text-lg font-bold tabular-nums text-emerald-500">
+   882→                        {formatNumber(data.kpis.totalSubscribers)}
+   883→                      </span>
+   884→                    </div>
+   885→                  </div>
+   886→                  <div className="w-full space-y-1.5">
+   887→                    {data.nicheBreakdown.map((n, i) => {
+   888→                      const pct =
+   889→                        data.kpis.totalSubscribers > 0
+   890→                          ? (n.subs / data.kpis.totalSubscribers) * 100
+   891→                          : 0;
+   892→                      return (
+   893→                        <div
+   894→                          key={n.niche}
+   895→                          className="flex items-center gap-2 text-xs"
+   896→                        >
+   897→                          <span
+   898→                            className="size-2 rounded-full shrink-0"
+   899→                            style={{
+   900→                              backgroundColor:
+   901→                                NICHE_HEX[i % NICHE_HEX.length],
+   902→                            }}
+   903→                          />
+   904→                          <span className="text-muted-foreground truncate">
+   905→                            {n.niche || "Other"}
+   906→                          </span>
+   907→                          <span className="ml-auto font-semibold tabular-nums">
+   908→                            {formatNumber(n.subs)}
+   909→                          </span>
+   910→                          <span className="text-muted-foreground tabular-nums w-10 text-right">
+   911→                            {pct.toFixed(0)}%
+   912→                          </span>
+   913→                        </div>
+   914→                      );
+   915→                    })}
+   916→                  </div>
+   917→                </div>
+   918→              )}
+   919→            </Card>
+   920→
+   921→            {/* Top performing videos */}
+   922→            <Card className="glass p-5 border-border/60 lg:col-span-2 relative overflow-hidden">
+   923→              <div className="absolute -top-12 -right-12 size-32 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
+   924→              <ChartCardHeader
+   925→                title={
+   926→                  <>
+   927→                    <Icon
+   928→                      name="trophy"
+   929→                      className="size-4 text-amber-500"
+   930→                    />
+   931→                    Top Performing Videos
+   932→                  </>
+   933→                }
+   934→                subtitle="Ranked by views"
+   935→                pillColor="emerald"
+   936→                pillLabel="Top 8"
+   937→                pillIcon="trending-up"
+   938→                trailing={
+   939→                  <Badge
+   940→                    variant="outline"
+   941→                    className="text-muted-foreground"
+   942→                  >
+   943→                    {data.topVideos.length}
+   944→                  </Badge>
+   945→                }
+   946→              />
+   947→              {!hasTop ? (
+   948→                <ChartEmpty message="No published videos to rank yet." />
+   949→              ) : (
+   950→                <ScrollArea className="max-h-[420px] pr-3">
+   951→                  <div className="space-y-2">
+   952→                    {data.topVideos.map((v, i) => {
+   953→                      const pct =
+   954→                        maxTopViews > 0 ? (v.views / maxTopViews) * 100 : 0;
+   955→                      const isTop = i === 0;
+   956→                      return (
+   957→                        <motion.div
+   958→                          key={v.id}
+   959→                          initial={{ opacity: 0, x: -8 }}
+   960→                          animate={{ opacity: 1, x: 0 }}
+   961→                          transition={{
+   962→                            delay: Math.min(i * 0.04, 0.3),
+   963→                            duration: 0.3,
+   964→                          }}
+   965→                          className={cn(
+   966→                            "relative rounded-xl border p-3 transition-colors",
+   967→                            isTop
+   968→                              ? "border-amber-500/40 bg-amber-500/5"
+   969→                              : "border-border/50 hover:bg-muted/30",
+   970→                          )}
+   971→                        >
+   972→                          <div className="flex items-start gap-3">
+   973→                            <div
+   974→                              className={cn(
+   975→                                "size-7 rounded-lg grid place-items-center shrink-0 text-xs font-bold tabular-nums",
+   976→                                isTop
+   977→                                  ? "bg-amber-500/15 text-amber-500"
+   978→                                  : "bg-muted text-muted-foreground",
+   979→                              )}
+   980→                            >
+   981→                              {isTop ? (
+   982→                                <Icon
+   983→                                  name="trophy"
+   984→                                  className="size-4 text-amber-500"
+   985→                                />
+   986→                              ) : (
+   987→                                i + 1
+   988→                              )}
+   989→                            </div>
+   990→                            <div className="min-w-0 flex-1">
+   991→                              <p className="text-sm font-medium truncate">
+   992→                                {v.title}
+   993→                              </p>
+   994→                              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+   995→                                <Pill color={v.channelColor}>
+   996→                                  {v.channel}
+   997→                                </Pill>
+   998→                                <span className="tabular-nums">
+   999→                                  {formatNumber(v.views)} views
+  1000→                                </span>
+  1001→                                <span aria-hidden>·</span>
+  1002→                                <span className="tabular-nums">
+  1003→                                  {v.ctr.toFixed(1)}% CTR
+  1004→                                </span>
+  1005→                                <span aria-hidden>·</span>
+  1006→                                <span className="tabular-nums">
+  1007→                                  {v.retention.toFixed(1)}% ret
+  1008→                                </span>
+  1009→                                <span aria-hidden>·</span>
+  1010→                                <span className="tabular-nums text-emerald-600 dark:text-emerald-400">
+  1011→                                  {formatMoney(v.revenue)}
+  1012→                                </span>
+  1013→                              </div>
+  1014→                              <div className="mt-2">
+  1015→                                <Progress
+  1016→                                  value={pct}
+  1017→                                  color={isTop ? "amber" : v.channelColor}
+  1018→                                />
+  1019→                              </div>
+  1020→                            </div>
+  1021→                          </div>
+  1022→                        </motion.div>
+  1023→                      );
+  1024→                    })}
+  1025→                  </div>
+  1026→                </ScrollArea>
+  1027→              )}
+  1028→            </Card>
+  1029→          </div>
+  1030→
+  1031→          {/* ─── Worst performing videos ───────────────────────────────────── */}
+  1032→          {hasWorst && (
+  1033→            <Card className="glass p-5 border-border/60 relative overflow-hidden">
+  1034→              <div className="absolute -top-12 -right-12 size-32 rounded-full bg-rose-500/10 blur-3xl pointer-events-none" />
+  1035→              <ChartCardHeader
+  1036→                title={
+  1037→                  <>
+  1038→                    <Icon
+  1039→                      name="trending-down"
+  1040→                      className="size-4 text-rose-500"
+  1041→                    />
+  1042→                    Needs Attention
+  1043→                  </>
+  1044→                }
+  1045→                subtitle={`Bottom ${data.worstVideos.length} published videos by views`}
+  1046→                pillColor="rose"
+  1047→                pillLabel="Underperforming"
+  1048→                pillIcon="alert-triangle"
+  1049→              />
+  1050→              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+  1051→                {data.worstVideos.map((v, i) => (
+  1052→                  <motion.div
+  1053→                    key={v.id}
+  1054→                    initial={{ opacity: 0, y: 8 }}
+  1055→                    animate={{ opacity: 1, y: 0 }}
+  1056→                    transition={{ delay: i * 0.05, duration: 0.3 }}
+  1057→                    className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 flex flex-col"
+  1058→                  >
+  1059→                    <div className="mb-2">
+  1060→                      <Pill color="rose" icon="alert-triangle">
+  1061→                        Attention
+  1062→                      </Pill>
+  1063→                    </div>
+  1064→                    <p className="text-sm font-medium line-clamp-2 mb-1.5 min-h-[2.5rem]">
+  1065→                      {v.title}
+  1066→                    </p>
+  1067→                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
+  1068→                      <span
+  1069→                        className={cn(
+  1070→                          "size-1.5 rounded-full shrink-0",
+  1071→                          colorFor(v.channelColor).dot,
+  1072→                        )}
+  1073→                      />
+  1074→                      <span className="truncate">{v.channel}</span>
+  1075→                    </div>
+  1076→                    <div className="flex items-baseline gap-1">
+  1077→                      <span className="text-lg font-bold tabular-nums text-rose-500">
+  1078→                        {formatNumber(v.views)}
+  1079→                      </span>
+  1080→                      <span className="text-xs text-muted-foreground">
+  1081→                        views
+  1082→                      </span>
+  1083→                    </div>
+  1084→                    <Separator className="my-2" />
+  1085→                    <div className="flex justify-between text-xs tabular-nums text-muted-foreground mt-auto">
+  1086→                      <span>CTR {v.ctr.toFixed(1)}%</span>
+  1087→                      <span>Ret {v.retention.toFixed(1)}%</span>
+  1088→                    </div>
+  1089→                  </motion.div>
+  1090→                ))}
+  1091→              </div>
+  1092→            </Card>
+  1093→          )}
+  1094→        </motion.div>
+  1095→      )}
+  1096→    </div>
+  1097→  );
+  1098→}
+  1099→

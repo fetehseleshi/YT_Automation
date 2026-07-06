@@ -1,0 +1,925 @@
+     1→"use client";
+     2→
+     3→import * as React from "react";
+     4→import { motion } from "framer-motion";
+     5→import {
+     6→  DndContext,
+     7→  DragOverlay,
+     8→  PointerSensor,
+     9→  useSensor,
+    10→  useSensors,
+    11→  useDroppable,
+    12→  closestCorners,
+    13→  type DragStartEvent,
+    14→  type DragEndEvent,
+    15→} from "@dnd-kit/core";
+    16→import {
+    17→  useSortable,
+    18→  SortableContext,
+    19→  verticalListSortingStrategy,
+    20→} from "@dnd-kit/sortable";
+    21→import { CSS } from "@dnd-kit/utilities";
+    22→import { toast } from "sonner";
+    23→
+    24→import { SectionHeader, EmptyState } from "@/components/shared/ui";
+    25→import { Icon } from "@/components/icon";
+    26→import { api, formatDate } from "@/lib/api";
+    27→import { cn } from "@/lib/utils";
+    28→import { Card as UICard } from "@/components/ui/card";
+    29→import { Button } from "@/components/ui/button";
+    30→import { Input } from "@/components/ui/input";
+    31→import { Textarea } from "@/components/ui/textarea";
+    32→import { Label } from "@/components/ui/label";
+    33→import {
+    34→  Select,
+    35→  SelectContent,
+    36→  SelectItem,
+    37→  SelectTrigger,
+    38→  SelectValue,
+    39→} from "@/components/ui/select";
+    40→import {
+    41→  Dialog,
+    42→  DialogContent,
+    43→  DialogDescription,
+    44→  DialogFooter,
+    45→  DialogHeader,
+    46→  DialogTitle,
+    47→} from "@/components/ui/dialog";
+    48→import { Badge } from "@/components/ui/badge";
+    49→import {
+    50→  Tooltip,
+    51→  TooltipContent,
+    52→  TooltipProvider,
+    53→  TooltipTrigger,
+    54→} from "@/components/ui/tooltip";
+    55→
+    56→// ─── Types ────────────────────────────────────────────────────────────────────
+    57→
+    58→type StageKey =
+    59→  | "ideas"
+    60→  | "research"
+    61→  | "script"
+    62→  | "voiceover"
+    63→  | "editing"
+    64→  | "thumbnail"
+    65→  | "ready"
+    66→  | "scheduled"
+    67→  | "published"
+    68→  | "archive";
+    69→
+    70→type Priority = "low" | "medium" | "high";
+    71→
+    72→interface PlannerChannel {
+    73→  id: string;
+    74→  name: string;
+    75→  niche?: string;
+    76→  color?: string;
+    77→}
+    78→
+    79→interface PlannerCard {
+    80→  id: string;
+    81→  title: string;
+    82→  description: string;
+    83→  stage: string;
+    84→  priority: string;
+    85→  position: number;
+    86→  channelId?: string | null;
+    87→  channel?: PlannerChannel | null;
+    88→  dueDate?: string | Date | null;
+    89→  tags?: string;
+    90→  assignee?: string;
+    91→  createdAt?: string;
+    92→  updatedAt?: string;
+    93→}
+    94→
+    95→// ─── Stage configuration ──────────────────────────────────────────────────────
+    96→
+    97→const STAGES: Record<StageKey, { label: string; color: string; icon: string }> = {
+    98→  ideas: { label: "Ideas", color: "teal", icon: "lightbulb" },
+    99→  research: { label: "Research", color: "emerald", icon: "search" },
+   100→  script: { label: "Script", color: "amber", icon: "file-text" },
+   101→  voiceover: { label: "Voiceover", color: "orange", icon: "message" },
+   102→  editing: { label: "Editing", color: "rose", icon: "film" },
+   103→  thumbnail: { label: "Thumbnail", color: "amber", icon: "image" },
+   104→  ready: { label: "Ready", color: "emerald", icon: "check-circle" },
+   105→  scheduled: { label: "Scheduled", color: "teal", icon: "calendar-days" },
+   106→  published: { label: "Published", color: "emerald", icon: "youtube" },
+   107→  archive: { label: "Archive", color: "muted", icon: "file-box" },
+   108→};
+   109→
+   110→const STAGE_ORDER = Object.keys(STAGES) as StageKey[];
+   111→
+   112→interface StageColor {
+   113→  text: string;
+   114→  bg: string;
+   115→  soft: string;
+   116→  dot: string;
+   117→  ring: string;
+   118→}
+   119→
+   120→const STAGE_COLORS: Record<string, StageColor> = {
+   121→  emerald: {
+   122→    text: "text-emerald-600 dark:text-emerald-400",
+   123→    bg: "bg-emerald-500",
+   124→    soft: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+   125→    dot: "bg-emerald-500",
+   126→    ring: "ring-emerald-500/30",
+   127→  },
+   128→  amber: {
+   129→    text: "text-amber-600 dark:text-amber-400",
+   130→    bg: "bg-amber-500",
+   131→    soft: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+   132→    dot: "bg-amber-500",
+   133→    ring: "ring-amber-500/30",
+   134→  },
+   135→  rose: {
+   136→    text: "text-rose-600 dark:text-rose-400",
+   137→    bg: "bg-rose-500",
+   138→    soft: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
+   139→    dot: "bg-rose-500",
+   140→    ring: "ring-rose-500/30",
+   141→  },
+   142→  teal: {
+   143→    text: "text-teal-600 dark:text-teal-400",
+   144→    bg: "bg-teal-500",
+   145→    soft: "bg-teal-500/10 text-teal-600 dark:text-teal-400",
+   146→    dot: "bg-teal-500",
+   147→    ring: "ring-teal-500/30",
+   148→  },
+   149→  orange: {
+   150→    text: "text-orange-600 dark:text-orange-400",
+   151→    bg: "bg-orange-500",
+   152→    soft: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
+   153→    dot: "bg-orange-500",
+   154→    ring: "ring-orange-500/30",
+   155→  },
+   156→  muted: {
+   157→    text: "text-muted-foreground",
+   158→    bg: "bg-muted-foreground/60",
+   159→    soft: "bg-muted text-muted-foreground",
+   160→    dot: "bg-muted-foreground/60",
+   161→    ring: "ring-border",
+   162→  },
+   163→};
+   164→
+   165→const stageColor = (key: string): StageColor =>
+   166→  STAGE_COLORS[key] ?? STAGE_COLORS.emerald;
+   167→
+   168→const priorityColor = (p: string): StageColor => {
+   169→  if (p === "high") return STAGE_COLORS.rose;
+   170→  if (p === "medium") return STAGE_COLORS.amber;
+   171→  if (p === "low") return STAGE_COLORS.teal;
+   172→  return STAGE_COLORS.muted;
+   173→};
+   174→
+   175→// ─── Card preview (used by sortable + overlay) ────────────────────────────────
+   176→
+   177→function CardPreview({
+   178→  card,
+   179→  dragging,
+   180→}: {
+   181→  card: PlannerCard;
+   182→  dragging?: boolean;
+   183→}) {
+   184→  const pColor = priorityColor(card.priority);
+   185→  const tags = (card.tags ?? "")
+   186→    .split(",")
+   187→    .map((t) => t.trim())
+   188→    .filter(Boolean);
+   189→
+   190→  return (
+   191→    <UICard
+   192→      className={cn(
+   193→        "p-3 bg-card/80 backdrop-blur border-border/60 transition-shadow",
+   194→        dragging && "shadow-2xl ring-2 ring-primary/40 border-primary/40"
+   195→      )}
+   196→    >
+   197→      <div className="flex items-start gap-2">
+   198→        <div
+   199→          className={cn(
+   200→            "mt-1 size-1.5 rounded-full shrink-0",
+   201→            pColor.dot
+   202→          )}
+   203→        />
+   204→        <p className="text-sm font-medium leading-snug line-clamp-2 flex-1">
+   205→          {card.title}
+   206→        </p>
+   207→      </div>
+   208→
+   209→      {card.description && (
+   210→        <p className="text-xs text-muted-foreground mt-1.5 line-clamp-2 pl-3.5">
+   211→          {card.description}
+   212→        </p>
+   213→      )}
+   214→
+   215→      <div className="flex flex-wrap items-center gap-1.5 mt-2.5 pl-3.5">
+   216→        <span
+   217→          className={cn(
+   218→            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+   219→            pColor.soft
+   220→          )}
+   221→        >
+   222→          {card.priority}
+   223→        </span>
+   224→        {card.channel && (
+   225→          <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground">
+   226→            <Icon name="youtube" className="size-2.5" />
+   227→            <span className="max-w-[80px] truncate">{card.channel.name}</span>
+   228→          </span>
+   229→        )}
+   230→        {card.dueDate && (
+   231→          <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground">
+   232→            <Icon name="clock" className="size-2.5" />
+   233→            {formatDate(card.dueDate as string | Date)}
+   234→          </span>
+   235→        )}
+   236→      </div>
+   237→
+   238→      {tags.length > 0 && (
+   239→        <div className="flex flex-wrap gap-1 mt-1.5 pl-3.5">
+   240→          {tags.slice(0, 3).map((t) => (
+   241→            <span
+   242→              key={t}
+   243→              className="text-[10px] text-muted-foreground/80"
+   244→            >
+   245→              #{t}
+   246→            </span>
+   247→          ))}
+   248→          {tags.length > 3 && (
+   249→            <span className="text-[10px] text-muted-foreground/60">
+   250→              +{tags.length - 3}
+   251→            </span>
+   252→          )}
+   253→        </div>
+   254→      )}
+   255→    </UICard>
+   256→  );
+   257→}
+   258→
+   259→// ─── Sortable card ────────────────────────────────────────────────────────────
+   260→
+   261→function SortableCard({
+   262→  card,
+   263→  onEdit,
+   264→}: {
+   265→  card: PlannerCard;
+   266→  onEdit: (c: PlannerCard) => void;
+   267→}) {
+   268→  const {
+   269→    attributes,
+   270→    listeners,
+   271→    setNodeRef,
+   272→    transform,
+   273→    transition,
+   274→    isDragging,
+   275→  } = useSortable({
+   276→    id: card.id,
+   277→    data: { stage: card.stage },
+   278→  });
+   279→
+   280→  const style: React.CSSProperties = {
+   281→    transform: CSS.Transform.toString(transform),
+   282→    transition,
+   283→    opacity: isDragging ? 0.35 : 1,
+   284→  };
+   285→
+   286→  return (
+   287→    <motion.div
+   288→      ref={setNodeRef}
+   289→      style={style}
+   290→      {...attributes}
+   291→      {...listeners}
+   292→      onClick={() => {
+   293→        if (!isDragging) onEdit(card);
+   294→      }}
+   295→      whileHover={{ scale: 1.015 }}
+   296→      whileTap={{ scale: 0.985 }}
+   297→      className="cursor-grab active:cursor-grabbing touch-none select-none"
+   298→    >
+   299→      <CardPreview card={card} />
+   300→    </motion.div>
+   301→  );
+   302→}
+   303→
+   304→// ─── Column ───────────────────────────────────────────────────────────────────
+   305→
+   306→function Column({
+   307→  stageKey,
+   308→  stageCards,
+   309→  onAddCard,
+   310→  onEditCard,
+   311→}: {
+   312→  stageKey: StageKey;
+   313→  stageCards: PlannerCard[];
+   314→  onAddCard: (stage: StageKey) => void;
+   315→  onEditCard: (c: PlannerCard) => void;
+   316→}) {
+   317→  const { setNodeRef, isOver } = useDroppable({
+   318→    id: stageKey,
+   319→    data: { stage: stageKey },
+   320→  });
+   321→  const stage = STAGES[stageKey];
+   322→  const color = stageColor(stage.color);
+   323→
+   324→  return (
+   325→    <div className="flex flex-col min-w-[280px] w-[280px] shrink-0">
+   326→      {/* colored top border */}
+   327→      <div className={cn("h-[3px] rounded-full mb-2.5", color.bg)} />
+   328→
+   329→      {/* header */}
+   330→      <div className="flex items-center justify-between px-1 mb-2">
+   331→        <div className="flex items-center gap-2 min-w-0">
+   332→          <Icon name={stage.icon} className={cn("size-4 shrink-0", color.text)} />
+   333→          <span className="text-sm font-semibold truncate">{stage.label}</span>
+   334→        </div>
+   335→        <Tooltip>
+   336→          <TooltipTrigger asChild>
+   337→            <Badge
+   338→              variant="secondary"
+   339→              className="text-[10px] font-semibold tabular-nums px-1.5 h-5"
+   340→            >
+   341→              {stageCards.length}
+   342→            </Badge>
+   343→          </TooltipTrigger>
+   344→          <TooltipContent side="top">
+   345→            {stageCards.length} card{stageCards.length === 1 ? "" : "s"}
+   346→          </TooltipContent>
+   347→        </Tooltip>
+   348→      </div>
+   349→
+   350→      {/* droppable body */}
+   351→      <div
+   352→        ref={setNodeRef}
+   353→        className={cn(
+   354→          "flex-1 min-h-[140px] rounded-xl p-2 space-y-2 transition-all border border-transparent",
+   355→          isOver && "bg-accent/40 ring-2 ring-primary/30 border-primary/20"
+   356→        )}
+   357→      >
+   358→        <SortableContext
+   359→          items={stageCards.map((c) => c.id)}
+   360→          strategy={verticalListSortingStrategy}
+   361→        >
+   362→          {stageCards.length === 0 ? (
+   363→            <div className="h-[80px] grid place-items-center text-[11px] text-muted-foreground/50 italic rounded-lg border border-dashed border-border/60">
+   364→              Drop here
+   365→            </div>
+   366→          ) : (
+   367→            stageCards.map((card) => (
+   368→              <SortableCard
+   369→                key={card.id}
+   370→                card={card}
+   371→                onEdit={onEditCard}
+   372→              />
+   373→            ))
+   374→          )}
+   375→        </SortableContext>
+   376→
+   377→        <button
+   378→          type="button"
+   379→          onClick={() => onAddCard(stageKey)}
+   380→          className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
+   381→        >
+   382→          <Icon name="plus" className="size-3" />
+   383→          Add card
+   384→        </button>
+   385→      </div>
+   386→    </div>
+   387→  );
+   388→}
+   389→
+   390→// ─── Create/Edit Dialog ───────────────────────────────────────────────────────
+   391→
+   392→interface DialogForm {
+   393→  title: string;
+   394→  description: string;
+   395→  stage: string;
+   396→  priority: string;
+   397→  channelId: string;
+   398→  dueDate: string;
+   399→  tags: string;
+   400→  assignee: string;
+   401→}
+   402→
+   403→function CardDialog({
+   404→  open,
+   405→  onOpenChange,
+   406→  editing,
+   407→  channels,
+   408→  onSave,
+   409→  onDelete,
+   410→}: {
+   411→  open: boolean;
+   412→  onOpenChange: (v: boolean) => void;
+   413→  editing: PlannerCard | null;
+   414→  channels: PlannerChannel[];
+   415→  onSave: (data: DialogForm) => Promise<void>;
+   416→  onDelete: (id: string) => Promise<void>;
+   417→}) {
+   418→  const isEdit = !!editing?.id;
+   419→  const [form, setForm] = React.useState<DialogForm>({
+   420→    title: "",
+   421→    description: "",
+   422→    stage: "ideas",
+   423→    priority: "medium",
+   424→    channelId: "",
+   425→    dueDate: "",
+   426→    tags: "",
+   427→    assignee: "",
+   428→  });
+   429→  const [saving, setSaving] = React.useState(false);
+   430→  const [deleting, setDeleting] = React.useState(false);
+   431→
+   432→  // Sync form when editing target changes.
+   433→  React.useEffect(() => {
+   434→    if (!editing) return;
+   435→    const due = editing.dueDate
+   436→      ? new Date(editing.dueDate as string | Date)
+   437→          .toISOString()
+   438→          .slice(0, 10)
+   439→      : "";
+   440→    setForm({
+   441→      title: editing.title ?? "",
+   442→      description: editing.description ?? "",
+   443→      stage: editing.stage ?? "ideas",
+   444→      priority: editing.priority ?? "medium",
+   445→      channelId: editing.channelId ?? "",
+   446→      dueDate: due,
+   447→      tags: editing.tags ?? "",
+   448→      assignee: editing.assignee ?? "",
+   449→    });
+   450→  }, [editing]);
+   451→
+   452→  const update = <K extends keyof DialogForm>(key: K, value: DialogForm[K]) =>
+   453→    setForm((prev) => ({ ...prev, [key]: value }));
+   454→
+   455→  const submit = async (e: React.FormEvent) => {
+   456→    e.preventDefault();
+   457→    if (!form.title.trim()) {
+   458→      toast.error("Title is required");
+   459→      return;
+   460→    }
+   461→    setSaving(true);
+   462→    try {
+   463→      await onSave(form);
+   464→    } finally {
+   465→      setSaving(false);
+   466→    }
+   467→  };
+   468→
+   469→  const remove = async () => {
+   470→    if (!editing?.id) return;
+   471→    setDeleting(true);
+   472→    try {
+   473→      await onDelete(editing.id);
+   474→    } finally {
+   475→      setDeleting(false);
+   476→    }
+   477→  };
+   478→
+   479→  return (
+   480→    <Dialog open={open} onOpenChange={onOpenChange}>
+   481→      <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
+   482→        <DialogHeader>
+   483→          <DialogTitle>{isEdit ? "Edit card" : "New card"}</DialogTitle>
+   484→          <DialogDescription>
+   485→            {isEdit
+   486→              ? "Update the details of this content card."
+   487→              : "Capture a new idea for your content pipeline."}
+   488→          </DialogDescription>
+   489→        </DialogHeader>
+   490→
+   491→        <form onSubmit={submit} className="space-y-4 mt-1">
+   492→          <div className="space-y-1.5">
+   493→            <Label htmlFor="card-title">Title *</Label>
+   494→            <Input
+   495→              id="card-title"
+   496→              value={form.title}
+   497→              onChange={(e) => update("title", e.target.value)}
+   498→              placeholder="e.g. 5 Morning Habits of Top Creators"
+   499→              autoFocus
+   500→              required
+   501→            />
+   502→          </div>
+   503→
+   504→          <div className="space-y-1.5">
+   505→            <Label htmlFor="card-desc">Description</Label>
+   506→            <Textarea
+   507→              id="card-desc"
+   508→              value={form.description}
+   509→              onChange={(e) => update("description", e.target.value)}
+   510→              placeholder="Brief outline or notes…"
+   511→              rows={3}
+   512→            />
+   513→          </div>
+   514→
+   515→          <div className="grid grid-cols-2 gap-3">
+   516→            <div className="space-y-1.5">
+   517→              <Label>Stage</Label>
+   518→              <Select
+   519→                value={form.stage}
+   520→                onValueChange={(v) => update("stage", v)}
+   521→              >
+   522→                <SelectTrigger className="w-full">
+   523→                  <SelectValue placeholder="Stage" />
+   524→                </SelectTrigger>
+   525→                <SelectContent>
+   526→                  {STAGE_ORDER.map((k) => (
+   527→                    <SelectItem key={k} value={k}>
+   528→                      {STAGES[k].label}
+   529→                    </SelectItem>
+   530→                  ))}
+   531→                </SelectContent>
+   532→              </Select>
+   533→            </div>
+   534→
+   535→            <div className="space-y-1.5">
+   536→              <Label>Priority</Label>
+   537→              <Select
+   538→                value={form.priority}
+   539→                onValueChange={(v) => update("priority", v)}
+   540→              >
+   541→                <SelectTrigger className="w-full">
+   542→                  <SelectValue placeholder="Priority" />
+   543→                </SelectTrigger>
+   544→                <SelectContent>
+   545→                  <SelectItem value="low">Low</SelectItem>
+   546→                  <SelectItem value="medium">Medium</SelectItem>
+   547→                  <SelectItem value="high">High</SelectItem>
+   548→                </SelectContent>
+   549→              </Select>
+   550→            </div>
+   551→          </div>
+   552→
+   553→          <div className="grid grid-cols-2 gap-3">
+   554→            <div className="space-y-1.5">
+   555→              <Label>Channel</Label>
+   556→              <Select
+   557→                value={form.channelId || "__none__"}
+   558→                onValueChange={(v) =>
+   559→                  update("channelId", v === "__none__" ? "" : v)
+   560→                }
+   561→              >
+   562→                <SelectTrigger className="w-full">
+   563→                  <SelectValue placeholder="Unassigned" />
+   564→                </SelectTrigger>
+   565→                <SelectContent>
+   566→                  <SelectItem value="__none__">Unassigned</SelectItem>
+   567→                  {channels.map((c) => (
+   568→                    <SelectItem key={c.id} value={c.id}>
+   569→                      {c.name}
+   570→                    </SelectItem>
+   571→                  ))}
+   572→                </SelectContent>
+   573→              </Select>
+   574→            </div>
+   575→
+   576→            <div className="space-y-1.5">
+   577→              <Label htmlFor="card-due">Due date</Label>
+   578→              <Input
+   579→                id="card-due"
+   580→                type="date"
+   581→                value={form.dueDate}
+   582→                onChange={(e) => update("dueDate", e.target.value)}
+   583→              />
+   584→            </div>
+   585→          </div>
+   586→
+   587→          <div className="grid grid-cols-2 gap-3">
+   588→            <div className="space-y-1.5">
+   589→              <Label htmlFor="card-tags">Tags</Label>
+   590→              <Input
+   591→                id="card-tags"
+   592→                value={form.tags}
+   593→                onChange={(e) => update("tags", e.target.value)}
+   594→                placeholder="comma, separated"
+   595→              />
+   596→            </div>
+   597→
+   598→            <div className="space-y-1.5">
+   599→              <Label htmlFor="card-assignee">Assignee</Label>
+   600→              <Input
+   601→                id="card-assignee"
+   602→                value={form.assignee}
+   603→                onChange={(e) => update("assignee", e.target.value)}
+   604→                placeholder="Name"
+   605→              />
+   606→            </div>
+   607→          </div>
+   608→
+   609→          <DialogFooter className="gap-2 mt-2">
+   610→            {isEdit && (
+   611→              <Button
+   612→                type="button"
+   613→                variant="destructive"
+   614→                onClick={remove}
+   615→                disabled={deleting}
+   616→                className="mr-auto"
+   617→              >
+   618→                <Icon name="trash" className="size-4" />
+   619→                {deleting ? "Deleting…" : "Delete"}
+   620→              </Button>
+   621→            )}
+   622→            <Button
+   623→              type="button"
+   624→              variant="ghost"
+   625→              onClick={() => onOpenChange(false)}
+   626→              disabled={saving}
+   627→            >
+   628→              Cancel
+   629→            </Button>
+   630→            <Button type="submit" disabled={saving || !form.title.trim()}>
+   631→              {saving ? "Saving…" : isEdit ? "Save changes" : "Create card"}
+   632→            </Button>
+   633→          </DialogFooter>
+   634→        </form>
+   635→      </DialogContent>
+   636→    </Dialog>
+   637→  );
+   638→}
+   639→
+   640→// ─── Main section ─────────────────────────────────────────────────────────────
+   641→
+   642→export function PlannerSection() {
+   643→  const [cards, setCards] = React.useState<PlannerCard[]>([]);
+   644→  const [channels, setChannels] = React.useState<PlannerChannel[]>([]);
+   645→  const [loading, setLoading] = React.useState(true);
+   646→  const [dialogOpen, setDialogOpen] = React.useState(false);
+   647→  const [editing, setEditing] = React.useState<PlannerCard | null>(null);
+   648→  const [activeId, setActiveId] = React.useState<string | null>(null);
+   649→
+   650→  const sensors = useSensors(
+   651→    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+   652→  );
+   653→
+   654→  const load = React.useCallback(async () => {
+   655→    try {
+   656→      const data = await api<{ cards: PlannerCard[] }>("/api/cards");
+   657→      setCards(data.cards ?? []);
+   658→    } catch {
+   659→      toast.error("Failed to load cards");
+   660→    } finally {
+   661→      setLoading(false);
+   662→    }
+   663→  }, []);
+   664→
+   665→  const loadChannels = React.useCallback(async () => {
+   666→    try {
+   667→      const data = await api<{ channels: PlannerChannel[] } | PlannerChannel[]>(
+   668→        "/api/channels"
+   669→      );
+   670→      const list = Array.isArray(data)
+   671→        ? data
+   672→        : (data?.channels ?? []);
+   673→      setChannels(list);
+   674→    } catch {
+   675→      // Channels route may not exist yet — degrade gracefully.
+   676→      setChannels([]);
+   677→    }
+   678→  }, []);
+   679→
+   680→  React.useEffect(() => {
+   681→    load();
+   682→    loadChannels();
+   683→  }, [load, loadChannels]);
+   684→
+   685→  const onDragStart = (e: DragStartEvent) => {
+   686→    setActiveId(String(e.active.id));
+   687→  };
+   688→
+   689→  const onDragEnd = async (e: DragEndEvent) => {
+   690→    setActiveId(null);
+   691→    const { active, over } = e;
+   692→    if (!over) return;
+   693→
+   694→    const activeCard = cards.find((c) => c.id === active.id);
+   695→    if (!activeCard) return;
+   696→
+   697→    const overId = String(over.id);
+   698→    let newStage: string | null = null;
+   699→    let newIndex = 0;
+   700→
+   701→    if (overId in STAGES) {
+   702→      // Dropped onto a column (possibly empty).
+   703→      newStage = overId;
+   704→      const stageCards = cards
+   705→        .filter((c) => c.stage === overId && c.id !== activeCard.id)
+   706→        .sort((a, b) => a.position - b.position);
+   707→      newIndex = stageCards.length;
+   708→    } else {
+   709→      // Dropped onto another card → use that card's stage + position.
+   710→      const overCard = cards.find((c) => c.id === overId);
+   711→      if (!overCard) return;
+   712→      newStage = overCard.stage;
+   713→      const stageCards = cards
+   714→        .filter((c) => c.stage === newStage && c.id !== activeCard.id)
+   715→        .sort((a, b) => a.position - b.position);
+   716→      const overIdx = stageCards.findIndex((c) => c.id === overCard.id);
+   717→      newIndex = overIdx === -1 ? stageCards.length : overIdx;
+   718→    }
+   719→
+   720→    if (!newStage) return;
+   721→
+   722→    // No-op: same stage, same position (dragged onto itself / same spot).
+   723→    const sameStage = newStage === activeCard.stage;
+   724→    const currentStageCards = cards
+   725→      .filter((c) => c.stage === activeCard.stage && c.id !== activeCard.id)
+   726→      .sort((a, b) => a.position - b.position);
+   727→    if (sameStage && newIndex === currentStageCards.length) {
+   728→      // Likely dropped at end of its own column with no real change.
+   729→      // Still allow reorder if user explicitly dropped onto a different card.
+   730→      const overCard = cards.find((c) => c.id === overId);
+   731→      if (!overCard || overCard.id === activeCard.id) return;
+   732→    }
+   733→
+   734→    // Optimistic local update: move card to new stage immediately.
+   735→    const prevCards = cards;
+   736→    setCards((prev) =>
+   737→      prev.map((c) =>
+   738→        c.id === activeCard.id ? { ...c, stage: newStage as string } : c
+   739→      )
+   740→    );
+   741→
+   742→    try {
+   743→      const data = await api<{ cards: PlannerCard[] }>("/api/cards/reorder", {
+   744→        method: "POST",
+   745→        body: JSON.stringify({
+   746→          cardId: activeCard.id,
+   747→          newStage,
+   748→          newIndex,
+   749→        }),
+   750→      });
+   751→      setCards(data.cards ?? []);
+   752→      toast.success(`Moved to ${STAGES[newStage as StageKey].label}`);
+   753→    } catch {
+   754→      setCards(prevCards);
+   755→      toast.error("Failed to move card");
+   756→    }
+   757→  };
+   758→
+   759→  const handleSave = async (formData: DialogForm) => {
+   760→    const payload = {
+   761→      title: formData.title.trim(),
+   762→      description: formData.description,
+   763→      stage: formData.stage,
+   764→      priority: formData.priority,
+   765→      channelId: formData.channelId || null,
+   766→      dueDate: formData.dueDate ? formData.dueDate : null,
+   767→      tags: formData.tags,
+   768→      assignee: formData.assignee,
+   769→    };
+   770→
+   771→    if (editing?.id) {
+   772→      const data = await api<{ card: PlannerCard }>(
+   773→        `/api/cards/${editing.id}`,
+   774→        {
+   775→          method: "PATCH",
+   776→          body: JSON.stringify(payload),
+   777→        }
+   778→      );
+   779→      setCards((prev) =>
+   780→        prev.map((c) => (c.id === data.card.id ? data.card : c))
+   781→      );
+   782→      // Reload to keep ordering consistent (stage may have changed).
+   783→      await load();
+   784→      toast.success("Card updated");
+   785→    } else {
+   786→      const data = await api<{ card: PlannerCard }>("/api/cards", {
+   787→        method: "POST",
+   788→        body: JSON.stringify(payload),
+   789→      });
+   790→      setCards((prev) => [...prev, data.card]);
+   791→      await load();
+   792→      toast.success("Card created");
+   793→    }
+   794→    setDialogOpen(false);
+   795→    setEditing(null);
+   796→  };
+   797→
+   798→  const handleDelete = async (id: string) => {
+   799→    try {
+   800→      await api(`/api/cards/${id}`, { method: "DELETE" });
+   801→      setCards((prev) => prev.filter((c) => c.id !== id));
+   802→      setDialogOpen(false);
+   803→      setEditing(null);
+   804→      toast.success("Card deleted");
+   805→    } catch {
+   806→      toast.error("Failed to delete card");
+   807→    }
+   808→  };
+   809→
+   810→  const openNew = (stage: StageKey = "ideas") => {
+   811→    setEditing({
+   812→      id: "",
+   813→      title: "",
+   814→      description: "",
+   815→      stage,
+   816→      priority: "medium",
+   817→      position: 0,
+   818→      channelId: null,
+   819→      channel: null,
+   820→      dueDate: null,
+   821→      tags: "",
+   822→      assignee: "",
+   823→      createdAt: "",
+   824→      updatedAt: "",
+   825→    });
+   826→    setDialogOpen(true);
+   827→  };
+   828→
+   829→  const openEdit = (card: PlannerCard) => {
+   830→    setEditing(card);
+   831→    setDialogOpen(true);
+   832→  };
+   833→
+   834→  const activeCard = cards.find((c) => c.id === activeId) ?? null;
+   835→
+   836→  // Group cards by stage.
+   837→  const byStage = (key: StageKey) =>
+   838→    cards
+   839→      .filter((c) => c.stage === key)
+   840→      .sort((a, b) => a.position - b.position);
+   841→
+   842→  return (
+   843→    <TooltipProvider delayDuration={150}>
+   844→      <SectionHeader
+   845→        title="Content Planner"
+   846→        description="Drag ideas through your production pipeline"
+   847→        icon="kanban-square"
+   848→        actions={
+   849→          <Button onClick={() => openNew("ideas")} size="sm">
+   850→            <Icon name="plus" className="size-4" />
+   851→            New Idea
+   852→          </Button>
+   853→        }
+   854→      />
+   855→
+   856→      {loading ? (
+   857→        <div className="grid place-items-center py-20 text-sm text-muted-foreground">
+   858→          <div className="flex items-center gap-2">
+   859→            <Icon name="refresh" className="size-4 animate-spin" />
+   860→            Loading board…
+   861→          </div>
+   862→        </div>
+   863→      ) : cards.length === 0 ? (
+   864→        <EmptyState
+   865→          icon="kanban-square"
+   866→          title="No cards yet"
+   867→          description="Capture your first idea and drag it across the production pipeline."
+   868→          action={
+   869→            <Button onClick={() => openNew("ideas")} size="sm">
+   870→              <Icon name="plus" className="size-4" />
+   871→              New Idea
+   872→            </Button>
+   873→          }
+   874→        />
+   875→      ) : (
+   876→        <DndContext
+   877→          sensors={sensors}
+   878→          collisionDetection={closestCorners}
+   879→          onDragStart={onDragStart}
+   880→          onDragEnd={onDragEnd}
+   881→        >
+   882→          <div className="overflow-x-auto pb-3 -mx-1 px-1">
+   883→            <div className="flex gap-3 min-w-min">
+   884→              {STAGE_ORDER.map((key) => (
+   885→                <Column
+   886→                  key={key}
+   887→                  stageKey={key}
+   888→                  stageCards={byStage(key)}
+   889→                  onAddCard={openNew}
+   890→                  onEditCard={openEdit}
+   891→                />
+   892→              ))}
+   893→            </div>
+   894→          </div>
+   895→
+   896→          <DragOverlay dropAnimation={null}>
+   897→            {activeCard ? (
+   898→              <motion.div
+   899→                initial={{ scale: 1, rotate: 0 }}
+   900→                animate={{ scale: 1.04, rotate: 1.5 }}
+   901→                transition={{ type: "spring", stiffness: 400, damping: 28 }}
+   902→                className="w-[256px]"
+   903→              >
+   904→                <CardPreview card={activeCard} dragging />
+   905→              </motion.div>
+   906→            ) : null}
+   907→          </DragOverlay>
+   908→        </DndContext>
+   909→      )}
+   910→
+   911→      <CardDialog
+   912→        open={dialogOpen}
+   913→        onOpenChange={(v) => {
+   914→          setDialogOpen(v);
+   915→          if (!v) setEditing(null);
+   916→        }}
+   917→        editing={editing}
+   918→        channels={channels}
+   919→        onSave={handleSave}
+   920→        onDelete={handleDelete}
+   921→      />
+   922→    </TooltipProvider>
+   923→  );
+   924→}
+   925→

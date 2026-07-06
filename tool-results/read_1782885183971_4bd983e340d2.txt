@@ -1,0 +1,1028 @@
+     1→"use client";
+     2→
+     3→import * as React from "react";
+     4→import { motion, AnimatePresence } from "framer-motion";
+     5→import { toast } from "sonner";
+     6→
+     7→import { SectionHeader, StatCard, EmptyState, Pill } from "@/components/shared/ui";
+     8→import { Icon } from "@/components/icon";
+     9→import { api, formatDate, colorFor } from "@/lib/api";
+    10→import { cn } from "@/lib/utils";
+    11→
+    12→import { Card } from "@/components/ui/card";
+    13→import { Button } from "@/components/ui/button";
+    14→import { Input } from "@/components/ui/input";
+    15→import { Textarea } from "@/components/ui/textarea";
+    16→import { Label } from "@/components/ui/label";
+    17→import {
+    18→  Select,
+    19→  SelectContent,
+    20→  SelectItem,
+    21→  SelectTrigger,
+    22→  SelectValue,
+    23→} from "@/components/ui/select";
+    24→import {
+    25→  Dialog,
+    26→  DialogContent,
+    27→  DialogDescription,
+    28→  DialogFooter,
+    29→  DialogHeader,
+    30→  DialogTitle,
+    31→} from "@/components/ui/dialog";
+    32→import {
+    33→  DropdownMenu,
+    34→  DropdownMenuContent,
+    35→  DropdownMenuItem,
+    36→  DropdownMenuSeparator,
+    37→  DropdownMenuTrigger,
+    38→} from "@/components/ui/dropdown-menu";
+    39→import {
+    40→  AlertDialog,
+    41→  AlertDialogAction,
+    42→  AlertDialogCancel,
+    43→  AlertDialogContent,
+    44→  AlertDialogDescription,
+    45→  AlertDialogFooter,
+    46→  AlertDialogHeader,
+    47→  AlertDialogTitle,
+    48→} from "@/components/ui/alert-dialog";
+    49→import { Separator } from "@/components/ui/separator";
+    50→
+    51→// ─── Types ────────────────────────────────────────────────────────────────────
+    52→
+    53→type FileType =
+    54→  | "script"
+    55→  | "voiceover"
+    56→  | "video"
+    57→  | "music"
+    58→  | "thumbnail"
+    59→  | "brand"
+    60→  | "logo"
+    61→  | "document";
+    62→
+    63→interface FileAsset {
+    64→  id: string;
+    65→  name: string;
+    66→  type: FileType;
+    67→  url: string;
+    68→  size: string;
+    69→  folder: string;
+    70→  tags: string;
+    71→  notes: string;
+    72→  createdAt: string;
+    73→  updatedAt: string;
+    74→}
+    75→
+    76→interface FileForm {
+    77→  name: string;
+    78→  type: FileType;
+    79→  url: string;
+    80→  size: string;
+    81→  folder: string;
+    82→  tags: string;
+    83→  notes: string;
+    84→}
+    85→
+    86→// ─── Constants ─────────────────────────────────────────────────────────────────
+    87→
+    88→const EMPTY_FORM: FileForm = {
+    89→  name: "",
+    90→  type: "document",
+    91→  url: "",
+    92→  size: "",
+    93→  folder: "General",
+    94→  tags: "",
+    95→  notes: "",
+    96→};
+    97→
+    98→const FILE_TYPES: Record<
+    99→  FileType,
+   100→  { label: string; icon: string; color: string; gradient: string }
+   101→> = {
+   102→  script: {
+   103→    label: "Script",
+   104→    icon: "file-text",
+   105→    color: "emerald",
+   106→    gradient: "from-emerald-500/30 via-emerald-600/10 to-transparent",
+   107→  },
+   108→  voiceover: {
+   109→    label: "Voiceover",
+   110→    icon: "message",
+   111→    color: "amber",
+   112→    gradient: "from-amber-500/30 via-amber-600/10 to-transparent",
+   113→  },
+   114→  video: {
+   115→    label: "Video",
+   116→    icon: "film",
+   117→    color: "rose",
+   118→    gradient: "from-rose-500/30 via-rose-600/10 to-transparent",
+   119→  },
+   120→  music: {
+   121→    label: "Music",
+   122→    icon: "music",
+   123→    color: "teal",
+   124→    gradient: "from-teal-500/30 via-teal-600/10 to-transparent",
+   125→  },
+   126→  thumbnail: {
+   127→    label: "Thumbnail",
+   128→    icon: "image",
+   129→    color: "orange",
+   130→    gradient: "from-orange-500/30 via-orange-600/10 to-transparent",
+   131→  },
+   132→  brand: {
+   133→    label: "Brand",
+   134→    icon: "palette",
+   135→    color: "emerald",
+   136→    gradient: "from-emerald-500/30 via-emerald-600/10 to-transparent",
+   137→  },
+   138→  logo: {
+   139→    label: "Logo",
+   140→    icon: "palette",
+   141→    color: "amber",
+   142→    gradient: "from-amber-500/30 via-amber-600/10 to-transparent",
+   143→  },
+   144→  document: {
+   145→    label: "Document",
+   146→    icon: "file-text",
+   147→    color: "teal",
+   148→    gradient: "from-teal-500/30 via-teal-600/10 to-transparent",
+   149→  },
+   150→};
+   151→
+   152→const ALL_TYPES: FileType[] = [
+   153→  "script",
+   154→  "voiceover",
+   155→  "video",
+   156→  "music",
+   157→  "thumbnail",
+   158→  "brand",
+   159→  "logo",
+   160→  "document",
+   161→];
+   162→
+   163→// ─── Helpers ──────────────────────────────────────────────────────────────────
+   164→
+   165→function parseTags(tags: string): string[] {
+   166→  return tags
+   167→    .split(",")
+   168→    .map((t) => t.trim())
+   169→    .filter(Boolean);
+   170→}
+   171→
+   172→// ─── Component ─────────────────────────────────────────────────────────────────
+   173→
+   174→export function FilesSection() {
+   175→  const [files, setFiles] = React.useState<FileAsset[]>([]);
+   176→  const [loading, setLoading] = React.useState(true);
+   177→  const [filters, setFilters] = React.useState<{
+   178→    type: string; // "all" | FileType
+   179→    folder: string; // "all" | folder name
+   180→  }>({ type: "all", folder: "all" });
+   181→
+   182→  const [dialogOpen, setDialogOpen] = React.useState(false);
+   183→  const [editing, setEditing] = React.useState<FileAsset | null>(null);
+   184→  const [form, setForm] = React.useState<FileForm>(EMPTY_FORM);
+   185→  const [saving, setSaving] = React.useState(false);
+   186→
+   187→  const [deleteTarget, setDeleteTarget] = React.useState<FileAsset | null>(null);
+   188→  const [deleting, setDeleting] = React.useState(false);
+   189→
+   190→  // ── Load files (server-side filters: type, folder) ───────────────────────────
+   191→  const load = React.useCallback(async () => {
+   192→    setLoading(true);
+   193→    try {
+   194→      const params = new URLSearchParams();
+   195→      if (filters.type !== "all") params.set("type", filters.type);
+   196→      if (filters.folder !== "all") params.set("folder", filters.folder);
+   197→      const qs = params.toString();
+   198→      const data = await api<{ files: FileAsset[] }>(
+   199→        `/api/files${qs ? `?${qs}` : ""}`
+   200→      );
+   201→      setFiles(data.files);
+   202→    } catch (e) {
+   203→      console.error("Failed to load files", e);
+   204→      toast.error("Failed to load files");
+   205→    } finally {
+   206→      setLoading(false);
+   207→    }
+   208→  }, [filters.type, filters.folder]);
+   209→
+   210→  React.useEffect(() => {
+   211→    void load();
+   212→  }, [load]);
+   213→
+   214→  // ── Derived: folders + type counts (computed across all files for the
+   215→  // sidebar/chip counts — but we filter server-side, so when a type/folder is
+   216→  // active we show counts within the active subset). ────────────────────────
+   217→  const folders = React.useMemo(() => {
+   218→    const set = new Set<string>();
+   219→    files.forEach((f) => set.add(f.folder || "General"));
+   220→    return Array.from(set).sort((a, b) => a.localeCompare(b));
+   221→  }, [files]);
+   222→
+   223→  const typeCounts = React.useMemo(() => {
+   224→    const map: Record<string, number> = {};
+   225→    files.forEach((f) => {
+   226→      map[f.type] = (map[f.type] ?? 0) + 1;
+   227→    });
+   228→    return map;
+   229→  }, [files]);
+   230→
+   231→  const folderCounts = React.useMemo(() => {
+   232→    const map: Record<string, number> = {};
+   233→    files.forEach((f) => {
+   234→      const key = f.folder || "General";
+   235→      map[key] = (map[key] ?? 0) + 1;
+   236→    });
+   237→    return map;
+   238→  }, [files]);
+   239→
+   240→  // ── Dialog handlers ──────────────────────────────────────────────────────────
+   241→  const openCreate = () => {
+   242→    setEditing(null);
+   243→    setForm({
+   244→      ...EMPTY_FORM,
+   245→      folder: filters.folder !== "all" ? filters.folder : "General",
+   246→      type: filters.type !== "all" ? (filters.type as FileType) : "document",
+   247→    });
+   248→    setDialogOpen(true);
+   249→  };
+   250→
+   251→  const openEdit = (file: FileAsset) => {
+   252→    setEditing(file);
+   253→    setForm({
+   254→      name: file.name,
+   255→      type: file.type,
+   256→      url: file.url,
+   257→      size: file.size,
+   258→      folder: file.folder,
+   259→      tags: file.tags,
+   260→      notes: file.notes,
+   261→    });
+   262→    setDialogOpen(true);
+   263→  };
+   264→
+   265→  const submit = async () => {
+   266→    const name = form.name.trim();
+   267→    if (!name) {
+   268→      toast.error("File name is required");
+   269→      return;
+   270→    }
+   271→    setSaving(true);
+   272→    try {
+   273→      if (editing) {
+   274→        await api(`/api/files/${editing.id}`, {
+   275→          method: "PATCH",
+   276→          body: JSON.stringify(form),
+   277→        });
+   278→        toast.success("File updated");
+   279→      } else {
+   280→        await api("/api/files", {
+   281→          method: "POST",
+   282→          body: JSON.stringify(form),
+   283→        });
+   284→        toast.success("File added");
+   285→      }
+   286→      setDialogOpen(false);
+   287→      await load();
+   288→    } catch (e) {
+   289→      console.error("Failed to save file", e);
+   290→      toast.error(editing ? "Failed to update file" : "Failed to add file");
+   291→    } finally {
+   292→      setSaving(false);
+   293→    }
+   294→  };
+   295→
+   296→  const confirmDelete = async () => {
+   297→    if (!deleteTarget) return;
+   298→    setDeleting(true);
+   299→    try {
+   300→      await api(`/api/files/${deleteTarget.id}`, { method: "DELETE" });
+   301→      toast.success("File deleted");
+   302→      setDeleteTarget(null);
+   303→      await load();
+   304→    } catch (e) {
+   305→      console.error("Failed to delete file", e);
+   306→      toast.error("Failed to delete file");
+   307→    } finally {
+   308→      setDeleting(false);
+   309→    }
+   310→  };
+   311→
+   312→  // ── Stats ────────────────────────────────────────────────────────────────────
+   313→  const totalFiles = files.length;
+   314→  const totalFolders = folders.length;
+   315→  const topType = React.useMemo(() => {
+   316→    let best: { type: string; count: number } | null = null;
+   317→    Object.entries(typeCounts).forEach(([type, count]) => {
+   318→      if (!best || count > best.count) best = { type, count };
+   319→    });
+   320→    return best as { type: string; count: number } | null;
+   321→  }, [typeCounts]);
+   322→  const topTypeMeta = topType ? FILE_TYPES[topType.type as FileType] : null;
+   323→
+   324→  return (
+   325→    <div className="space-y-5">
+   326→      <SectionHeader
+   327→        title="File Library"
+   328→        description="Every asset, neatly organized"
+   329→        icon="folder-open"
+   330→        actions={
+   331→          <Button onClick={openCreate} className="gap-1.5">
+   332→            <Icon name="plus" className="size-4" />
+   333→            Add File
+   334→          </Button>
+   335→        }
+   336→      />
+   337→
+   338→      {/* ── Summary strip ─────────────────────────────────────────────────────── */}
+   339→      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+   340→        <StatCard
+   341→          label="Total Files"
+   342→          value={totalFiles}
+   343→          icon="folder-open"
+   344→          color="emerald"
+   345→          hint="Across all folders"
+   346→          delay={0}
+   347→        />
+   348→        <StatCard
+   349→          label="Folders"
+   350→          value={totalFolders}
+   351→          icon="folder-open"
+   352→          color="teal"
+   353→          hint="Organized collections"
+   354→          delay={0.05}
+   355→        />
+   356→        <StatCard
+   357→          label={topTypeMeta ? `${topTypeMeta.label}s` : "Top Type"}
+   358→          value={topType ? topType.count : 0}
+   359→          icon={topTypeMeta?.icon ?? "file-text"}
+   360→          color={topTypeMeta?.color ?? "amber"}
+   361→          hint={topType ? "Most common type" : "No files yet"}
+   362→          delay={0.1}
+   363→        />
+   364→        <StatCard
+   365→          label="Media Files"
+   366→          value={
+   367→            (typeCounts.video ?? 0) +
+   368→            (typeCounts.voiceover ?? 0) +
+   369→            (typeCounts.music ?? 0) +
+   370→            (typeCounts.thumbnail ?? 0)
+   371→          }
+   372→          icon="film"
+   373→          color="rose"
+   374→          hint="Video · audio · images"
+   375→          delay={0.15}
+   376→        />
+   377→      </div>
+   378→
+   379→      {/* ── Type filter chips + folder select ─────────────────────────────────── */}
+   380→      <Card className="glass p-3 border-border/60">
+   381→        <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+   382→          <div className="flex items-center gap-2 shrink-0">
+   383→            <Icon name="filter" className="size-4 text-muted-foreground" />
+   384→            <span className="text-xs font-medium text-muted-foreground">Type</span>
+   385→          </div>
+   386→          <div className="flex-1 min-w-0 overflow-x-auto pb-1 -mb-1 scrollbar-thin">
+   387→            <div className="flex items-center gap-1.5 min-w-min">
+   388→              <FilterChip
+   389→                active={filters.type === "all"}
+   390→                onClick={() => setFilters((f) => ({ ...f, type: "all" }))}
+   391→                label="All"
+   392→                count={totalFiles}
+   393→                icon="layout-grid"
+   394→                color="emerald"
+   395→              />
+   396→              {ALL_TYPES.map((t) => {
+   397→                const meta = FILE_TYPES[t];
+   398→                const count = typeCounts[t] ?? 0;
+   399→                return (
+   400→                  <FilterChip
+   401→                    key={t}
+   402→                    active={filters.type === t}
+   403→                    onClick={() => setFilters((f) => ({ ...f, type: t }))}
+   404→                    label={meta.label}
+   405→                    count={count}
+   406→                    icon={meta.icon}
+   407→                    color={meta.color}
+   408→                  />
+   409→                );
+   410→              })}
+   411→            </div>
+   412→          </div>
+   413→          <Separator orientation="vertical" className="hidden lg:block h-8" />
+   414→          <div className="flex items-center gap-2 shrink-0">
+   415→            <Icon name="folder-open" className="size-4 text-muted-foreground" />
+   416→            <span className="text-xs font-medium text-muted-foreground">Folder</span>
+   417→            <Select
+   418→              value={filters.folder}
+   419→              onValueChange={(v) => setFilters((f) => ({ ...f, folder: v }))}
+   420→            >
+   421→              <SelectTrigger className="w-[180px] h-9">
+   422→                <SelectValue placeholder="All folders" />
+   423→              </SelectTrigger>
+   424→              <SelectContent>
+   425→                <SelectItem value="all">All folders</SelectItem>
+   426→                {folders.map((f) => (
+   427→                  <SelectItem key={f} value={f}>
+   428→                    <span className="flex items-center justify-between gap-2 w-full">
+   429→                      <span className="truncate">{f}</span>
+   430→                      <span className="text-[10px] text-muted-foreground tabular-nums">
+   431→                        {folderCounts[f]}
+   432→                      </span>
+   433→                    </span>
+   434→                  </SelectItem>
+   435→                ))}
+   436→              </SelectContent>
+   437→            </Select>
+   438→          </div>
+   439→        </div>
+   440→      </Card>
+   441→
+   442→      {/* ── Files grid ────────────────────────────────────────────────────────── */}
+   443→      {loading ? (
+   444→        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+   445→          {Array.from({ length: 10 }).map((_, i) => (
+   446→            <FileSkeleton key={i} />
+   447→          ))}
+   448→        </div>
+   449→      ) : files.length === 0 ? (
+   450→        <EmptyState
+   451→          icon="folder-open"
+   452→          title={
+   453→            filters.type !== "all" || filters.folder !== "all"
+   454→              ? "No files match your filters"
+   455→              : "Your library is empty"
+   456→          }
+   457→          description={
+   458→            filters.type !== "all" || filters.folder !== "all"
+   459→              ? "Try a different type or folder to find what you're looking for."
+   460→              : "Add scripts, voiceovers, thumbnails, music, and other assets to keep them organized."
+   461→          }
+   462→          action={
+   463→            <div className="flex items-center gap-2">
+   464→              <Button onClick={openCreate} className="gap-1.5">
+   465→                <Icon name="plus" className="size-4" />
+   466→                Add File
+   467→              </Button>
+   468→              {(filters.type !== "all" || filters.folder !== "all") && (
+   469→                <Button
+   470→                  variant="outline"
+   471→                  onClick={() =>
+   472→                    setFilters({ type: "all", folder: "all" })
+   473→                  }
+   474→                >
+   475→                  Clear filters
+   476→                </Button>
+   477→              )}
+   478→            </div>
+   479→          }
+   480→        />
+   481→      ) : (
+   482→        <motion.div
+   483→          className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3"
+   484→          layout
+   485→        >
+   486→          <AnimatePresence mode="popLayout">
+   487→            {files.map((file, i) => (
+   488→              <FileCard
+   489→                key={file.id}
+   490→                file={file}
+   491→                index={i}
+   492→                onEdit={() => openEdit(file)}
+   493→                onDelete={() => setDeleteTarget(file)}
+   494→              />
+   495→            ))}
+   496→          </AnimatePresence>
+   497→        </motion.div>
+   498→      )}
+   499→
+   500→      {/* ── Create / Edit dialog ─────────────────────────────────────────────── */}
+   501→      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+   502→        <DialogContent className="sm:max-w-lg">
+   503→          <DialogHeader>
+   504→            <DialogTitle className="flex items-center gap-2">
+   505→              <Icon
+   506→                name={editing ? "edit" : "plus"}
+   507→                className="size-4 text-primary"
+   508→              />
+   509→              {editing ? "Edit file" : "Add file"}
+   510→            </DialogTitle>
+   511→            <DialogDescription>
+   512→              {editing
+   513→                ? "Update the details of this file asset."
+   514→                : "Add a new asset to your file library."}
+   515→            </DialogDescription>
+   516→          </DialogHeader>
+   517→
+   518→          <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1 -mr-1">
+   519→            {/* Name */}
+   520→            <div className="space-y-1.5">
+   521→              <Label htmlFor="file-name">
+   522→                Name <span className="text-rose-500">*</span>
+   523→              </Label>
+   524→              <Input
+   525→                id="file-name"
+   526→                value={form.name}
+   527→                onChange={(e) =>
+   528→                  setForm((f) => ({ ...f, name: e.target.value }))
+   529→                }
+   530→                placeholder="e.g. Discipline_Script_v3.docx"
+   531→                autoFocus
+   532→              />
+   533→            </div>
+   534→
+   535→            {/* Type + Size */}
+   536→            <div className="grid grid-cols-2 gap-3">
+   537→              <div className="space-y-1.5">
+   538→                <Label htmlFor="file-type">Type</Label>
+   539→                <Select
+   540→                  value={form.type}
+   541→                  onValueChange={(v) =>
+   542→                    setForm((f) => ({ ...f, type: v as FileType }))
+   543→                  }
+   544→                >
+   545→                  <SelectTrigger id="file-type">
+   546→                    <SelectValue />
+   547→                  </SelectTrigger>
+   548→                  <SelectContent>
+   549→                    {ALL_TYPES.map((t) => (
+   550→                      <SelectItem key={t} value={t}>
+   551→                        <span className="flex items-center gap-2">
+   552→                          <Icon
+   553→                            name={FILE_TYPES[t].icon}
+   554→                            className={cn(
+   555→                              "size-3.5",
+   556→                              colorFor(FILE_TYPES[t].color).text
+   557→                            )}
+   558→                          />
+   559→                          {FILE_TYPES[t].label}
+   560→                        </span>
+   561→                      </SelectItem>
+   562→                    ))}
+   563→                  </SelectContent>
+   564→                </Select>
+   565→              </div>
+   566→              <div className="space-y-1.5">
+   567→                <Label htmlFor="file-size">Size</Label>
+   568→                <Input
+   569→                  id="file-size"
+   570→                  value={form.size}
+   571→                  onChange={(e) =>
+   572→                    setForm((f) => ({ ...f, size: e.target.value }))
+   573→                  }
+   574→                  placeholder="e.g. 24 KB"
+   575→                />
+   576→              </div>
+   577→            </div>
+   578→
+   579→            {/* URL */}
+   580→            <div className="space-y-1.5">
+   581→              <Label htmlFor="file-url">URL / path</Label>
+   582→              <Input
+   583→                id="file-url"
+   584→                value={form.url}
+   585→                onChange={(e) =>
+   586→                  setForm((f) => ({ ...f, url: e.target.value }))
+   587→                }
+   588→                placeholder="file path or URL"
+   589→              />
+   590→            </div>
+   591→
+   592→            {/* Folder (with datalist of existing) */}
+   593→            <div className="space-y-1.5">
+   594→              <Label htmlFor="file-folder">Folder</Label>
+   595→              <Input
+   596→                id="file-folder"
+   597→                list="folders-datalist"
+   598→                value={form.folder}
+   599→                onChange={(e) =>
+   600→                  setForm((f) => ({ ...f, folder: e.target.value }))
+   601→                }
+   602→                placeholder="General"
+   603→              />
+   604→              <datalist id="folders-datalist">
+   605→                {folders.map((f) => (
+   606→                  <option key={f} value={f} />
+   607→                ))}
+   608→              </datalist>
+   609→              <p className="text-[11px] text-muted-foreground">
+   610→                Pick an existing folder or type a new one.
+   611→              </p>
+   612→            </div>
+   613→
+   614→            {/* Tags (comma Input) */}
+   615→            <div className="space-y-1.5">
+   616→              <Label htmlFor="file-tags">Tags</Label>
+   617→              <Input
+   618→                id="file-tags"
+   619→                value={form.tags}
+   620→                onChange={(e) =>
+   621→                  setForm((f) => ({ ...f, tags: e.target.value }))
+   622→                }
+   623→                placeholder="comma, separated, tags"
+   624→              />
+   625→              {parseTags(form.tags).length > 0 && (
+   626→                <div className="flex flex-wrap gap-1 pt-1">
+   627→                  {parseTags(form.tags).slice(0, 6).map((t) => (
+   628→                    <Pill key={t} color="teal">
+   629→                      {t}
+   630→                    </Pill>
+   631→                  ))}
+   632→                </div>
+   633→              )}
+   634→            </div>
+   635→
+   636→            <Separator />
+   637→
+   638→            {/* Notes */}
+   639→            <div className="space-y-1.5">
+   640→              <Label htmlFor="file-notes">Notes</Label>
+   641→              <Textarea
+   642→                id="file-notes"
+   643→                value={form.notes}
+   644→                onChange={(e) =>
+   645→                  setForm((f) => ({ ...f, notes: e.target.value }))
+   646→                }
+   647→                placeholder="Optional notes about this file…"
+   648→                rows={3}
+   649→              />
+   650→            </div>
+   651→          </div>
+   652→
+   653→          <DialogFooter className="gap-2">
+   654→            {editing && (
+   655→              <Button
+   656→                variant="destructive"
+   657→                className="mr-auto"
+   658→                onClick={() => {
+   659→                  setDialogOpen(false);
+   660→                  setDeleteTarget(editing);
+   661→                }}
+   662→              >
+   663→                <Icon name="trash" className="size-4 mr-1" />
+   664→                Delete
+   665→              </Button>
+   666→            )}
+   667→            <Button
+   668→              variant="outline"
+   669→              onClick={() => setDialogOpen(false)}
+   670→              disabled={saving}
+   671→            >
+   672→              Cancel
+   673→            </Button>
+   674→            <Button onClick={submit} disabled={saving || !form.name.trim()}>
+   675→              {saving && <Icon name="refresh" className="size-4 mr-1 animate-spin" />}
+   676→              {editing ? "Save changes" : "Add file"}
+   677→            </Button>
+   678→          </DialogFooter>
+   679→        </DialogContent>
+   680→      </Dialog>
+   681→
+   682→      {/* ── Delete confirmation ──────────────────────────────────────────────── */}
+   683→      <AlertDialog
+   684→        open={!!deleteTarget}
+   685→        onOpenChange={(o) => !o && setDeleteTarget(null)}
+   686→      >
+   687→        <AlertDialogContent>
+   688→          <AlertDialogHeader>
+   689→            <AlertDialogTitle>Delete this file?</AlertDialogTitle>
+   690→            <AlertDialogDescription>
+   691→              {deleteTarget && (
+   692→                <>
+   693→                  &ldquo;{deleteTarget.name}&rdquo; will be permanently removed
+   694→                  from your library. This action cannot be undone.
+   695→                </>
+   696→              )}
+   697→            </AlertDialogDescription>
+   698→          </AlertDialogHeader>
+   699→          <AlertDialogFooter>
+   700→            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+   701→            <AlertDialogAction
+   702→              onClick={(e) => {
+   703→                e.preventDefault();
+   704→                void confirmDelete();
+   705→              }}
+   706→              className="bg-rose-600 hover:bg-rose-700 text-white"
+   707→              disabled={deleting}
+   708→            >
+   709→              {deleting && (
+   710→                <Icon name="refresh" className="size-4 mr-1 animate-spin" />
+   711→              )}
+   712→              Delete
+   713→            </AlertDialogAction>
+   714→          </AlertDialogFooter>
+   715→        </AlertDialogContent>
+   716→      </AlertDialog>
+   717→    </div>
+   718→  );
+   719→}
+   720→
+   721→// ─── Filter Chip ───────────────────────────────────────────────────────────────
+   722→
+   723→function FilterChip({
+   724→  active,
+   725→  onClick,
+   726→  label,
+   727→  count,
+   728→  icon,
+   729→  color,
+   730→}: {
+   731→  active: boolean;
+   732→  onClick: () => void;
+   733→  label: string;
+   734→  count: number;
+   735→  icon: string;
+   736→  color: string;
+   737→}) {
+   738→  const c = colorFor(color);
+   739→  return (
+   740→    <button
+   741→      onClick={onClick}
+   742→      className={cn(
+   743→        "group relative inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors",
+   744→        active
+   745→          ? cn(c.soft, "ring-1", c.ring)
+   746→          : "text-muted-foreground hover:text-foreground hover:bg-accent"
+   747→      )}
+   748→    >
+   749→      <Icon name={icon} className="size-3.5" />
+   750→      <span>{label}</span>
+   751→      <span
+   752→        className={cn(
+   753→          "tabular-nums text-[10px] rounded-full px-1.5 py-px",
+   754→          active
+   755→            ? "bg-foreground/10"
+   756→            : "bg-muted text-muted-foreground group-hover:bg-background/60"
+   757→        )}
+   758→      >
+   759→        {count}
+   760→      </span>
+   761→    </button>
+   762→  );
+   763→}
+   764→
+   765→// ─── File Card ─────────────────────────────────────────────────────────────────
+   766→
+   767→function FileCard({
+   768→  file,
+   769→  index,
+   770→  onEdit,
+   771→  onDelete,
+   772→}: {
+   773→  file: FileAsset;
+   774→  index: number;
+   775→  onEdit: () => void;
+   776→  onDelete: () => void;
+   777→}) {
+   778→  const meta = FILE_TYPES[file.type] ?? FILE_TYPES.document;
+   779→  const c = colorFor(meta.color);
+   780→  const tags = parseTags(file.tags);
+   781→  const downloadHref = file.url || "#";
+   782→
+   783→  return (
+   784→    <motion.div
+   785→      layout
+   786→      initial={{ opacity: 0, y: 14, scale: 0.98 }}
+   787→      animate={{ opacity: 1, y: 0, scale: 1 }}
+   788→      exit={{ opacity: 0, scale: 0.95 }}
+   789→      transition={{
+   790→        duration: 0.3,
+   791→        delay: Math.min(index * 0.03, 0.4),
+   792→        ease: [0.2, 0.8, 0.2, 1],
+   793→      }}
+   794→      className="lift"
+   795→    >
+   796→      <Card className="group relative overflow-hidden p-0 border-border/60 hover:border-border transition-colors">
+   797→        {/* Decorative gradient by type */}
+   798→        <div
+   799→          className={cn(
+   800→            "pointer-events-none absolute inset-x-0 -top-10 h-24 bg-gradient-to-b opacity-60",
+   801→            meta.gradient
+   802→          )}
+   803→        />
+   804→
+   805→        {/* Icon tile */}
+   806→        <div className="relative p-4 pb-2">
+   807→          <div
+   808→            className={cn(
+   809→              "size-12 rounded-xl grid place-items-center shrink-0",
+   810→              c.soft
+   811→            )}
+   812→          >
+   813→            <Icon name={meta.icon} className={cn("size-6", c.text)} />
+   814→          </div>
+   815→
+   816→          {/* Hover actions overlay */}
+   817→          <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+   818→            <CardAction
+   819→              icon="external-link"
+   820→              label="Open"
+   821→              color={meta.color}
+   822→              onClick={(e) => {
+   823→                e.stopPropagation();
+   824→                if (file.url) {
+   825→                  window.open(file.url, "_blank", "noopener,noreferrer");
+   826→                } else {
+   827→                  toast.info("No URL set for this file");
+   828→                }
+   829→              }}
+   830→              as="a"
+   831→              href={downloadHref}
+   832→              target="_blank"
+   833→              rel="noopener noreferrer"
+   834→            />
+   835→            <CardAction
+   836→              icon="edit"
+   837→              label="Edit"
+   838→              color="emerald"
+   839→              onClick={(e) => {
+   840→                e.stopPropagation();
+   841→                onEdit();
+   842→              }}
+   843→            />
+   844→            <CardAction
+   845→              icon="trash"
+   846→              label="Delete"
+   847→              color="rose"
+   848→              onClick={(e) => {
+   849→                e.stopPropagation();
+   850→                onDelete();
+   851→              }}
+   852→            />
+   853→          </div>
+   854→        </div>
+   855→
+   856→        {/* Body */}
+   857→        <button
+   858→          onClick={onEdit}
+   859→          className="relative w-full text-left px-4 pb-4 space-y-2"
+   860→        >
+   861→          {/* Name (2-line clamp) */}
+   862→          <p className="text-sm font-semibold leading-snug line-clamp-2 min-h-[2.5rem]">
+   863→            {file.name}
+   864→          </p>
+   865→
+   866→          {/* Type pill + size */}
+   867→          <div className="flex items-center justify-between gap-2">
+   868→            <Pill color={meta.color} icon={meta.icon}>
+   869→              {meta.label}
+   870→            </Pill>
+   871→            {file.size && (
+   872→              <span className="text-[11px] text-muted-foreground tabular-nums">
+   873→                {file.size}
+   874→              </span>
+   875→            )}
+   876→          </div>
+   877→
+   878→          {/* Folder label */}
+   879→          <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+   880→            <Icon name="folder-open" className="size-3 shrink-0" />
+   881→            <span className="truncate">{file.folder || "General"}</span>
+   882→          </div>
+   883→
+   884→          {/* Tags */}
+   885→          {tags.length > 0 && (
+   886→            <div className="flex flex-wrap gap-1 min-h-[1rem]">
+   887→              {tags.slice(0, 3).map((t) => (
+   888→                <span
+   889→                  key={t}
+   890→                  className="inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+   891→                >
+   892→                  {t}
+   893→                </span>
+   894→              ))}
+   895→              {tags.length > 3 && (
+   896→                <span className="inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+   897→                  +{tags.length - 3}
+   898→                </span>
+   899→              )}
+   900→            </div>
+   901→          )}
+   902→
+   903→          <Separator className="my-1" />
+   904→
+   905→          {/* Created date */}
+   906→          <div className="flex items-center justify-between gap-2">
+   907→            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+   908→              <Icon name="clock" className="size-3" />
+   909→              {formatDate(file.createdAt)}
+   910→            </span>
+   911→            {file.notes && (
+   912→              <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground">
+   913→                <Icon name="sticky-note" className="size-3" />
+   914→                Notes
+   915→              </span>
+   916→            )}
+   917→          </div>
+   918→        </button>
+   919→
+   920→        {/* Footer dropdown (always-visible affordance on mobile) */}
+   921→        <div className="absolute bottom-2 right-2 lg:hidden">
+   922→          <DropdownMenu>
+   923→            <DropdownMenuTrigger asChild>
+   924→              <button className="size-7 rounded-md grid place-items-center text-muted-foreground hover:bg-accent">
+   925→                <Icon name="more-horizontal" className="size-4" />
+   926→              </button>
+   927→            </DropdownMenuTrigger>
+   928→            <DropdownMenuContent align="end">
+   929→              <DropdownMenuItem
+   930→                onClick={() => {
+   931→                  if (file.url)
+   932→                    window.open(file.url, "_blank", "noopener,noreferrer");
+   933→                  else toast.info("No URL set for this file");
+   934→                }}
+   935→              >
+   936→                <Icon name="external-link" className="size-4 mr-2" />
+   937→                Open
+   938→              </DropdownMenuItem>
+   939→              <DropdownMenuItem onClick={onEdit}>
+   940→                <Icon name="edit" className="size-4 mr-2" />
+   941→                Edit
+   942→              </DropdownMenuItem>
+   943→              <DropdownMenuSeparator />
+   944→              <DropdownMenuItem
+   945→                className="text-rose-600 dark:text-rose-400"
+   946→                onClick={onDelete}
+   947→              >
+   948→                <Icon name="trash" className="size-4 mr-2" />
+   949→                Delete
+   950→              </DropdownMenuItem>
+   951→            </DropdownMenuContent>
+   952→          </DropdownMenu>
+   953→        </div>
+   954→      </Card>
+   955→    </motion.div>
+   956→  );
+   957→}
+   958→
+   959→function CardAction({
+   960→  icon,
+   961→  label,
+   962→  color,
+   963→  onClick,
+   964→  as = "button",
+   965→  href,
+   966→  target,
+   967→  rel,
+   968→}: {
+   969→  icon: string;
+   970→  label: string;
+   971→  color: string;
+   972→  onClick: (e: React.MouseEvent) => void;
+   973→  as?: "button" | "a";
+   974→  href?: string;
+   975→  target?: string;
+   976→  rel?: string;
+   977→}) {
+   978→  const c = colorFor(color);
+   979→  const cls = cn(
+   980→    "size-7 rounded-md grid place-items-center bg-background/80 backdrop-blur border border-border/60 shadow-sm transition-colors",
+   981→    "hover:scale-105 active:scale-95",
+   982→    c.text,
+   983→    "hover:bg-accent"
+   984→  );
+   985→  if (as === "a") {
+   986→    return (
+   987→      <a
+   988→        href={href || "#"}
+   989→        target={target}
+   990→        rel={rel}
+   991→        onClick={onClick}
+   992→        aria-label={label}
+   993→        title={label}
+   994→        className={cls}
+   995→      >
+   996→        <Icon name={icon} className="size-3.5" />
+   997→      </a>
+   998→    );
+   999→  }
+  1000→  return (
+  1001→    <button
+  1002→      onClick={onClick}
+  1003→      aria-label={label}
+  1004→      title={label}
+  1005→      className={cls}
+  1006→    >
+  1007→      <Icon name={icon} className="size-3.5" />
+  1008→    </button>
+  1009→  );
+  1010→}
+  1011→
+  1012→// ─── Skeleton ──────────────────────────────────────────────────────────────────
+  1013→
+  1014→function FileSkeleton() {
+  1015→  return (
+  1016→    <Card className="p-4 border-border/60 overflow-hidden">
+  1017→      <div className="size-12 rounded-xl shimmer" />
+  1018→      <div className="mt-3 space-y-2">
+  1019→        <div className="h-3 w-5/6 rounded shimmer" />
+  1020→        <div className="h-3 w-3/5 rounded shimmer" />
+  1021→        <div className="h-5 w-1/2 rounded-full shimmer mt-3" />
+  1022→        <div className="h-2.5 w-2/3 rounded shimmer" />
+  1023→        <div className="h-2.5 w-1/2 rounded shimmer" />
+  1024→      </div>
+  1025→    </Card>
+  1026→  );
+  1027→}
+  1028→

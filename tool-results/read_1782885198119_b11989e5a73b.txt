@@ -1,0 +1,1295 @@
+     1→"use client";
+     2→
+     3→import * as React from "react";
+     4→import { motion, AnimatePresence } from "framer-motion";
+     5→import { useTheme } from "next-themes";
+     6→import { toast } from "sonner";
+     7→
+     8→import { SectionHeader, Pill } from "@/components/shared/ui";
+     9→import { Icon } from "@/components/icon";
+    10→import {
+    11→  Card,
+    12→  CardContent,
+    13→  CardDescription,
+    14→  CardHeader,
+    15→  CardTitle,
+    16→} from "@/components/ui/card";
+    17→import { Button } from "@/components/ui/button";
+    18→import { Input } from "@/components/ui/input";
+    19→import { Label } from "@/components/ui/label";
+    20→import { Switch } from "@/components/ui/switch";
+    21→import {
+    22→  Tabs,
+    23→  TabsContent,
+    24→  TabsList,
+    25→  TabsTrigger,
+    26→} from "@/components/ui/tabs";
+    27→import { Separator } from "@/components/ui/separator";
+    28→import { Badge } from "@/components/ui/badge";
+    29→import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+    30→import { ScrollArea } from "@/components/ui/scroll-area";
+    31→import {
+    32→  Select,
+    33→  SelectContent,
+    34→  SelectItem,
+    35→  SelectTrigger,
+    36→  SelectValue,
+    37→} from "@/components/ui/select";
+    38→import { cn } from "@/lib/utils";
+    39→
+    40→// ─── localStorage-backed settings store ─────────────────────────────────────
+    41→const get = <T,>(k: string, d: T): T => {
+    42→  try {
+    43→    return JSON.parse(localStorage.getItem("settings:" + k) ?? "null") ?? d;
+    44→  } catch {
+    45→    return d;
+    46→  }
+    47→};
+    48→const set = (k: string, v: unknown) =>
+    49→  localStorage.setItem("settings:" + k, JSON.stringify(v));
+    50→
+    51→// ─── Static option sets ─────────────────────────────────────────────────────
+    52→const ACCENTS = [
+    53→  { key: "emerald", label: "Emerald", dot: "bg-emerald-500", soft: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400", ring: "ring-emerald-500/40" },
+    54→  { key: "amber", label: "Amber", dot: "bg-amber-500", soft: "bg-amber-500/10 text-amber-600 dark:text-amber-400", ring: "ring-amber-500/40" },
+    55→  { key: "rose", label: "Rose", dot: "bg-rose-500", soft: "bg-rose-500/10 text-rose-600 dark:text-rose-400", ring: "ring-rose-500/40" },
+    56→  { key: "teal", label: "Teal", dot: "bg-teal-500", soft: "bg-teal-500/10 text-teal-600 dark:text-teal-400", ring: "ring-teal-500/40" },
+    57→  { key: "orange", label: "Orange", dot: "bg-orange-500", soft: "bg-orange-500/10 text-orange-600 dark:text-orange-400", ring: "ring-orange-500/40" },
+    58→] as const;
+    59→
+    60→const LANGUAGES = [
+    61→  { code: "en", label: "English", flag: "🇺🇸" },
+    62→  { code: "es", label: "Español", flag: "🇪🇸" },
+    63→  { code: "fr", label: "Français", flag: "🇫🇷" },
+    64→  { code: "de", label: "Deutsch", flag: "🇩🇪" },
+    65→  { code: "zh", label: "中文", flag: "🇨🇳" },
+    66→  { code: "ja", label: "日本語", flag: "🇯🇵" },
+    67→  { code: "ar", label: "العربية", flag: "🇸🇦" },
+    68→] as const;
+    69→
+    70→const NOTIF_KEYS = [
+    71→  { key: "email", label: "Email notifications", desc: "Receive a daily digest of activity in your inbox.", icon: "info" },
+    72→  { key: "tasks", label: "Task reminders", desc: "Get reminded about tasks due in the next 24 hours.", icon: "check-square" },
+    73→  { key: "publish", label: "Publish reminders", desc: "Heads-up before a scheduled video goes live.", icon: "upload" },
+    74→  { key: "weekly", label: "Weekly reports", desc: "Sunday digest with revenue, views and growth.", icon: "bar-chart-3" },
+    75→  { key: "trends", label: "Trend alerts", desc: "Notify me when a tracked trend spikes in volume.", icon: "trending-up" },
+    76→] as const;
+    77→
+    78→const DEVICES = [
+    79→  { id: "d1", name: "MacBook Pro · Chrome", location: "San Francisco, US", current: true, last: "Active now" },
+    80→  { id: "d2", name: "iPhone 15 · Safari", location: "San Francisco, US", current: false, last: "2 hours ago" },
+    81→  { id: "d3", name: "Windows · Edge", location: "Berlin, DE", current: false, last: "Yesterday" },
+    82→];
+    83→
+    84→const SHORTCUTS = [
+    85→  { keys: ["⌘", "K"], label: "Open command palette", group: "Global" },
+    86→  { keys: ["G", "D"], label: "Go to Dashboard", group: "Navigation" },
+    87→  { keys: ["G", "C"], label: "Go to Channels", group: "Navigation" },
+    88→  { keys: ["G", "P"], label: "Go to Content Planner", group: "Navigation" },
+    89→  { keys: ["G", "V"], label: "Go to Videos", group: "Navigation" },
+    90→  { keys: ["G", "T"], label: "Go to Tasks", group: "Navigation" },
+    91→  { keys: ["G", "F"], label: "Go to Finance", group: "Navigation" },
+    92→  { keys: ["N"], label: "Quick add new task", group: "Actions" },
+    93→  { keys: ["F"], label: "Toggle focus mode", group: "Actions" },
+    94→  { keys: ["?"], label: "Show keyboard shortcuts", group: "Actions" },
+    95→  { keys: ["Esc"], label: "Close dialog / palette", group: "Actions" },
+    96→];
+    97→
+    98→const TABS = [
+    99→  { value: "appearance", label: "Appearance", icon: "palette" },
+   100→  { value: "profile", label: "Profile", icon: "users" },
+   101→  { value: "language", label: "Language", icon: "languages" },
+   102→  { value: "notifications", label: "Notifications", icon: "bell" },
+   103→  { value: "security", label: "Security", icon: "shield" },
+   104→  { value: "data", label: "Data & Backup", icon: "database" },
+   105→  { value: "shortcuts", label: "Shortcuts", icon: "keyboard" },
+   106→  { value: "about", label: "About", icon: "info" },
+   107→] as const;
+   108→
+   109→type TabValue = (typeof TABS)[number]["value"];
+   110→
+   111→// ─── Helpers ────────────────────────────────────────────────────────────────
+   112→function initials(name: string): string {
+   113→  const parts = name.trim().split(/\s+/).filter(Boolean);
+   114→  if (parts.length === 0) return "Y";
+   115→  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+   116→  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
+   117→}
+   118→
+   119→function downloadJson(filename: string, data: unknown) {
+   120→  const blob = new Blob([JSON.stringify(data, null, 2)], {
+   121→    type: "application/json",
+   122→  });
+   123→  const url = URL.createObjectURL(blob);
+   124→  const a = document.createElement("a");
+   125→  a.href = url;
+   126→  a.download = filename;
+   127→  document.body.appendChild(a);
+   128→  a.click();
+   129→  a.remove();
+   130→  URL.revokeObjectURL(url);
+   131→}
+   132→
+   133→// ─── Main component ─────────────────────────────────────────────────────────
+   134→export function SettingsSection() {
+   135→  const [tab, setTab] = React.useState<TabValue>("appearance");
+   136→  const [mounted, setMounted] = React.useState(false);
+   137→  React.useEffect(() => setMounted(true), []);
+   138→
+   139→  return (
+   140→    <div className="space-y-5">
+   141→      <SectionHeader
+   142→        title="Settings"
+   143→        description="Personalize your studio — appearance, profile, language, notifications, security, and data."
+   144→        icon="settings"
+   145→        actions={
+   146→          <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
+   147→            <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+   148→            Auto-saved
+   149→          </Badge>
+   150→        }
+   151→      />
+   152→
+   153→      <Tabs
+   154→        value={tab}
+   155→        onValueChange={(v) => setTab(v as TabValue)}
+   156→        className="flex flex-col lg:flex-row gap-5 items-start"
+   157→      >
+   158→        {/* Left rail: vertical on desktop, horizontal scroll on mobile */}
+   159→        <TabsList className="lg:flex-col lg:h-auto lg:w-60 lg:items-stretch lg:justify-start w-full overflow-x-auto lg:overflow-visible h-auto p-1.5 gap-1">
+   160→          {TABS.map((t) => (
+   161→            <TabsTrigger
+   162→              key={t.value}
+   163→              value={t.value}
+   164→              className="lg:justify-start lg:w-full justify-center gap-2 px-3 py-2 text-sm h-9 whitespace-nowrap"
+   165→            >
+   166→              <Icon name={t.icon} className="size-4 shrink-0" />
+   167→              <span className="hidden sm:inline lg:inline">{t.label}</span>
+   168→            </TabsTrigger>
+   169→          ))}
+   170→        </TabsList>
+   171→
+   172→        {/* Right content: animated */}
+   173→        <div className="flex-1 w-full min-w-0">
+   174→          <AnimatePresence mode="wait">
+   175→            <motion.div
+   176→              key={tab}
+   177→              initial={{ opacity: 0, y: 8 }}
+   178→              animate={{ opacity: 1, y: 0 }}
+   179→              exit={{ opacity: 0, y: -6 }}
+   180→              transition={{ duration: 0.22, ease: [0.2, 0.8, 0.2, 1] }}
+   181→            >
+   182→              {mounted ? (
+   183→                <>
+   184→                  {tab === "appearance" && <AppearanceTab />}
+   185→                  {tab === "profile" && <ProfileTab />}
+   186→                  {tab === "language" && <LanguageTab />}
+   187→                  {tab === "notifications" && <NotificationsTab />}
+   188→                  {tab === "security" && <SecurityTab />}
+   189→                  {tab === "data" && <DataTab />}
+   190→                  {tab === "shortcuts" && <ShortcutsTab />}
+   191→                  {tab === "about" && <AboutTab />}
+   192→                </>
+   193→              ) : (
+   194→                <Card className="glass p-6">
+   195→                  <div className="shimmer h-48 rounded-lg bg-muted/40" />
+   196→                </Card>
+   197→              )}
+   198→            </motion.div>
+   199→          </AnimatePresence>
+   200→        </div>
+   201→      </Tabs>
+   202→    </div>
+   203→  );
+   204→}
+   205→
+   206→// ─── Sub-card wrapper ───────────────────────────────────────────────────────
+   207→function SettingsCard({
+   208→  title,
+   209→  description,
+   210→  icon,
+   211→  children,
+   212→  action,
+   213→}: {
+   214→  title: string;
+   215→  description?: string;
+   216→  icon?: string;
+   217→  children: React.ReactNode;
+   218→  action?: React.ReactNode;
+   219→}) {
+   220→  return (
+   221→    <Card className="glass border-border/60 lift">
+   222→      <CardHeader className="pb-3">
+   223→        <div className="flex items-start justify-between gap-3">
+   224→          <div className="flex items-start gap-3">
+   225→            {icon && (
+   226→              <div className="size-9 rounded-lg bg-primary/10 grid place-items-center shrink-0">
+   227→                <Icon name={icon} className="size-4.5 text-primary" />
+   228→              </div>
+   229→            )}
+   230→            <div>
+   231→              <CardTitle className="text-base">{title}</CardTitle>
+   232→              {description && (
+   233→                <CardDescription className="mt-0.5">{description}</CardDescription>
+   234→              )}
+   235→            </div>
+   236→          </div>
+   237→          {action}
+   238→        </div>
+   239→      </CardHeader>
+   240→      <CardContent className="pt-0">{children}</CardContent>
+   241→    </Card>
+   242→  );
+   243→}
+   244→
+   245→// ─── 1. Appearance ──────────────────────────────────────────────────────────
+   246→function AppearanceTab() {
+   247→  const { theme, setTheme } = useTheme();
+   248→  const [accent, setAccent] = React.useState<string>("emerald");
+   249→  const [density, setDensity] = React.useState<string>("comfortable");
+   250→  const [mounted, setMounted] = React.useState(false);
+   251→
+   252→  React.useEffect(() => {
+   253→    setMounted(true);
+   254→    setAccent(get<string>("accent", "emerald"));
+   255→    setDensity(get<string>("density", "comfortable"));
+   256→  }, []);
+   257→
+   258→  // Apply accent as data attribute on <html> for future CSS hookups.
+   259→  React.useEffect(() => {
+   260→    if (!mounted) return;
+   261→    document.documentElement.setAttribute("data-accent", accent);
+   262→  }, [accent, mounted]);
+   263→
+   264→  const themeValue = mounted ? (theme ?? "dark") : "dark";
+   265→
+   266→  const themes: { key: string; label: string; icon: string }[] = [
+   267→    { key: "light", label: "Light", icon: "sun" },
+   268→    { key: "dark", label: "Dark", icon: "moon" },
+   269→    { key: "system", label: "System", icon: "globe" },
+   270→  ];
+   271→
+   272→  return (
+   273→    <div className="space-y-5">
+   274→      <SettingsCard
+   275→        title="Theme"
+   276→        description="Pick how the studio looks. System follows your OS preference."
+   277→        icon="palette"
+   278→      >
+   279→        <RadioGroup
+   280→          value={themeValue}
+   281→          onValueChange={(v) => {
+   282→            setTheme(v);
+   283→            set("theme", v);
+   284→            toast.success("Theme preference saved", {
+   285→              description: `Switched to ${v} mode.`,
+   286→            });
+   287→          }}
+   288→          className="grid grid-cols-1 sm:grid-cols-3 gap-3"
+   289→        >
+   290→          {themes.map((t) => (
+   291→            <label
+   292→              key={t.key}
+   293→              htmlFor={`theme-${t.key}`}
+   294→              className={cn(
+   295→                "group relative cursor-pointer rounded-xl border p-3 transition-all",
+   296→                themeValue === t.key
+   297→                  ? "border-primary/60 bg-primary/5 ring-2 ring-primary/20"
+   298→                  : "border-border/60 hover:border-border hover:bg-accent/40"
+   299→              )}
+   300→            >
+   301→              <div className="flex items-center justify-between mb-3">
+   302→                <span className="text-sm font-medium">{t.label}</span>
+   303→                <RadioGroupItem id={`theme-${t.key}`} value={t.key} />
+   304→              </div>
+   305→              {/* Visual preview */}
+   306→              <div
+   307→                className={cn(
+   308→                  "h-16 rounded-lg overflow-hidden border",
+   309→                  t.key === "light"
+   310→                    ? "bg-zinc-50 border-zinc-200"
+   311→                    : t.key === "dark"
+   312→                    ? "bg-zinc-950 border-zinc-800"
+   313→                    : "bg-gradient-to-r from-zinc-50 to-zinc-950 border-zinc-300"
+   314→                )}
+   315→              >
+   316→                <div className="h-full flex items-center justify-center">
+   317→                  <Icon
+   318→                    name={t.icon}
+   319→                    className={cn(
+   320→                      "size-5",
+   321→                      t.key === "light"
+   322→                        ? "text-amber-500"
+   323→                        : t.key === "dark"
+   324→                        ? "text-emerald-400"
+   325→                        : "text-zinc-400"
+   326→                    )}
+   327→                  />
+   328→                </div>
+   329→              </div>
+   330→            </label>
+   331→          ))}
+   332→        </RadioGroup>
+   333→      </SettingsCard>
+   334→
+   335→      <SettingsCard
+   336→        title="Accent color"
+   337→        description="Highlights, charts, and active states will use this color."
+   338→        icon="sparkles"
+   339→      >
+   340→        <div className="flex flex-wrap gap-3">
+   341→          {ACCENTS.map((a) => (
+   342→            <button
+   343→              key={a.key}
+   344→              type="button"
+   345→              onClick={() => {
+   346→                setAccent(a.key);
+   347→                set("accent", a.key);
+   348→                toast.success("Accent color saved", {
+   349→                  description: `${a.label} is now your accent.`,
+   350→                });
+   351→              }}
+   352→              className={cn(
+   353→                "group flex flex-col items-center gap-2 rounded-xl border p-3 w-24 transition-all",
+   354→                accent === a.key
+   355→                  ? cn("border-transparent ring-2 bg-accent/40", a.ring)
+   356→                  : "border-border/60 hover:border-border hover:bg-accent/40"
+   357→              )}
+   358→              aria-label={`Set accent to ${a.label}`}
+   359→            >
+   360→              <span
+   361→                className={cn(
+   362→                  "size-10 rounded-full grid place-items-center transition-transform group-hover:scale-110",
+   363→                  a.dot
+   364→                )}
+   365→              >
+   366→                {accent === a.key && (
+   367→                  <Icon name="check" className="size-5 text-white" />
+   368→                )}
+   369→              </span>
+   370→              <span className="text-xs font-medium">{a.label}</span>
+   371→            </button>
+   372→          ))}
+   373→        </div>
+   374→      </SettingsCard>
+   375→
+   376→      <SettingsCard
+   377→        title="Density"
+   378→        description="Compact mode reduces paddings to fit more on screen."
+   379→        icon="layout-grid"
+   380→      >
+   381→        <RadioGroup
+   382→          value={density}
+   383→          onValueChange={(v) => {
+   384→            setDensity(v);
+   385→            set("density", v);
+   386→            document.documentElement.setAttribute("data-density", v);
+   387→            toast.success("Density preference saved");
+   388→          }}
+   389→          className="grid grid-cols-1 sm:grid-cols-2 gap-3"
+   390→        >
+   391→          {[
+   392→            { key: "comfortable", label: "Comfortable", desc: "Spacious padding, ideal for laptops." },
+   393→            { key: "compact", label: "Compact", desc: "Tighter rows, fits more cards on screen." },
+   394→          ].map((d) => (
+   395→            <label
+   396→              key={d.key}
+   397→              htmlFor={`density-${d.key}`}
+   398→              className={cn(
+   399→                "relative cursor-pointer rounded-xl border p-4 transition-all",
+   400→                density === d.key
+   401→                  ? "border-primary/60 bg-primary/5 ring-2 ring-primary/20"
+   402→                  : "border-border/60 hover:border-border hover:bg-accent/40"
+   403→              )}
+   404→            >
+   405→              <div className="flex items-center justify-between mb-1">
+   406→                <span className="text-sm font-semibold">{d.label}</span>
+   407→                <RadioGroupItem id={`density-${d.key}`} value={d.key} />
+   408→              </div>
+   409→              <p className="text-xs text-muted-foreground">{d.desc}</p>
+   410→              <div className="mt-3 space-y-1">
+   411→                <div
+   412→                  className={cn(
+   413→                    "rounded bg-muted/60",
+   414→                    d.key === "comfortable" ? "h-3" : "h-2"
+   415→                  )}
+   416→                />
+   417→                <div
+   418→                  className={cn(
+   419→                    "rounded bg-muted/60 w-2/3",
+   420→                    d.key === "comfortable" ? "h-3" : "h-2"
+   421→                  )}
+   422→                />
+   423→                <div
+   424→                  className={cn(
+   425→                    "rounded bg-muted/60 w-4/5",
+   426→                    d.key === "comfortable" ? "h-3" : "h-2"
+   427→                  )}
+   428→                />
+   429→              </div>
+   430→            </label>
+   431→          ))}
+   432→        </RadioGroup>
+   433→      </SettingsCard>
+   434→    </div>
+   435→  );
+   436→}
+   437→
+   438→// ─── 2. Profile ────────────────────────────────────────────────────────────
+   439→interface ProfileData {
+   440→  name: string;
+   441→  email: string;
+   442→  bio: string;
+   443→}
+   444→const DEFAULT_PROFILE: ProfileData = {
+   445→  name: "Studio Owner",
+   446→  email: "owner@ytstudio.io",
+   447→  bio: "Building a portfolio of YouTube automation channels across tech, finance, and lifestyle niches.",
+   448→};
+   449→
+   450→function ProfileTab() {
+   451→  const [profile, setProfile] = React.useState<ProfileData>(DEFAULT_PROFILE);
+   452→  const [draft, setDraft] = React.useState<ProfileData>(DEFAULT_PROFILE);
+   453→  const [saving, setSaving] = React.useState(false);
+   454→  const [mounted, setMounted] = React.useState(false);
+   455→
+   456→  React.useEffect(() => {
+   457→    const loaded = get<ProfileData>("profile", DEFAULT_PROFILE);
+   458→    setProfile(loaded);
+   459→    setDraft(loaded);
+   460→    setMounted(true);
+   461→  }, []);
+   462→
+   463→  const save = async () => {
+   464→    setSaving(true);
+   465→    try {
+   466→      await new Promise((r) => setTimeout(r, 350));
+   467→      set("profile", draft);
+   468→      setProfile(draft);
+   469→      toast.success("Profile saved", {
+   470→        description: "Your studio owner profile has been updated.",
+   471→      });
+   472→    } finally {
+   473→      setSaving(false);
+   474→    }
+   475→  };
+   476→
+   477→  const dirty = JSON.stringify(draft) !== JSON.stringify(profile);
+   478→
+   479→  return (
+   480→    <div className="space-y-5">
+   481→      <SettingsCard
+   482→        title="Studio owner"
+   483→        description="This profile appears in the top bar and is used for collaboration features."
+   484→        icon="users"
+   485→        action={
+   486→          mounted && dirty ? (
+   487→            <Pill color="amber" icon="clock">
+   488→              Unsaved changes
+   489→            </Pill>
+   490→          ) : undefined
+   491→        }
+   492→      >
+   493→        <div className="flex flex-col sm:flex-row items-start gap-5">
+   494→          <div className="flex flex-col items-center gap-2">
+   495→            <div className="size-20 rounded-2xl bg-gradient-to-br from-amber-400 via-rose-500 to-teal-500 grid place-items-center text-white text-2xl font-bold shadow-lg shadow-rose-500/20">
+   496→              {mounted ? initials(draft.name) : "Y"}
+   497→            </div>
+   498→            <span className="text-xs text-muted-foreground">Initials preview</span>
+   499→          </div>
+   500→          <div className="flex-1 w-full space-y-3">
+   501→            <div className="space-y-1.5">
+   502→              <Label htmlFor="profile-name">Display name</Label>
+   503→              <Input
+   504→                id="profile-name"
+   505→                value={draft.name}
+   506→                onChange={(e) =>
+   507→                  setDraft((d) => ({ ...d, name: e.target.value }))
+   508→                }
+   509→                placeholder="Your name"
+   510→              />
+   511→            </div>
+   512→            <div className="space-y-1.5">
+   513→              <Label htmlFor="profile-email">Email</Label>
+   514→              <Input
+   515→                id="profile-email"
+   516→                type="email"
+   517→                value={draft.email}
+   518→                onChange={(e) =>
+   519→                  setDraft((d) => ({ ...d, email: e.target.value }))
+   520→                }
+   521→                placeholder="you@studio.io"
+   522→              />
+   523→            </div>
+   524→            <div className="space-y-1.5">
+   525→              <Label htmlFor="profile-bio">Bio</Label>
+   526→              <Input
+   527→                id="profile-bio"
+   528→                value={draft.bio}
+   529→                onChange={(e) =>
+   530→                  setDraft((d) => ({ ...d, bio: e.target.value }))
+   531→                }
+   532→                placeholder="A short bio"
+   533→              />
+   534→            </div>
+   535→            <div className="flex items-center gap-2 pt-1">
+   536→              <Button
+   537→                onClick={save}
+   538→                disabled={!dirty || saving}
+   539→                className="bg-primary"
+   540→              >
+   541→                {saving ? (
+   542→                  <>
+   543→                    <Icon name="refresh" className="size-4 animate-spin" />
+   544→                    Saving…
+   545→                  </>
+   546→                ) : (
+   547→                  <>
+   548→                    <Icon name="check" className="size-4" />
+   549→                    Save profile
+   550→                  </>
+   551→                )}
+   552→              </Button>
+   553→              {dirty && (
+   554→                <Button
+   555→                  variant="ghost"
+   556→                  onClick={() => setDraft(profile)}
+   557→                  disabled={saving}
+   558→                >
+   559→                  Reset
+   560→                </Button>
+   561→              )}
+   562→            </div>
+   563→          </div>
+   564→        </div>
+   565→      </SettingsCard>
+   566→
+   567→      <SettingsCard
+   568→        title="Workspace"
+   569→        description="Studio-level branding shown across exports and reports."
+   570→        icon="sparkles"
+   571→      >
+   572→        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+   573→          <div className="space-y-1.5">
+   574→            <Label>Studio name</Label>
+   575→            <Input defaultValue="My YT Automation Studio" readOnly className="bg-muted/40" />
+   576→          </div>
+   577→          <div className="space-y-1.5">
+   578→            <Label>Timezone</Label>
+   579→            <Input
+   580→              defaultValue={Intl.DateTimeFormat().resolvedOptions().timeZone}
+   581→              readOnly
+   582→              className="bg-muted/40"
+   583→            />
+   584→          </div>
+   585→        </div>
+   586→        <p className="text-xs text-muted-foreground mt-3">
+   587→          Workspace-level settings are managed via your team plan.
+   588→        </p>
+   589→      </SettingsCard>
+   590→    </div>
+   591→  );
+   592→}
+   593→
+   594→// ─── 3. Language ───────────────────────────────────────────────────────────
+   595→function LanguageTab() {
+   596→  const [lang, setLang] = React.useState<string>("en");
+   597→  const [mounted, setMounted] = React.useState(false);
+   598→
+   599→  React.useEffect(() => {
+   600→    setLang(get<string>("language", "en"));
+   601→    setMounted(true);
+   602→  }, []);
+   603→
+   604→  const current = LANGUAGES.find((l) => l.code === lang) ?? LANGUAGES[0]!;
+   605→
+   606→  return (
+   607→    <div className="space-y-5">
+   608→      <SettingsCard
+   609→        title="Language"
+   610→        description="Choose your preferred interface language. The studio UI stays English for now — this preference is recorded for upcoming translations."
+   611→        icon="languages"
+   612→      >
+   613→        <div className="space-y-3">
+   614→          <Label htmlFor="lang-select">Interface language</Label>
+   615→          <Select
+   616→            value={lang}
+   617→            onValueChange={(v) => {
+   618→              setLang(v);
+   619→              set("language", v);
+   620→              const found = LANGUAGES.find((l) => l.code === v);
+   621→              toast.success("Language preference saved", {
+   622→                description: `Selected: ${found?.label ?? v}. UI translations coming soon.`,
+   623→              });
+   624→            }}
+   625→          >
+   626→            <SelectTrigger id="lang-select" className="w-full sm:w-72">
+   627→              <SelectValue placeholder="Select a language" />
+   628→            </SelectTrigger>
+   629→            <SelectContent>
+   630→              {LANGUAGES.map((l) => (
+   631→                <SelectItem key={l.code} value={l.code}>
+   632→                  <span className="mr-2">{l.flag}</span>
+   633→                  {l.label}
+   634→                </SelectItem>
+   635→              ))}
+   636→            </SelectContent>
+   637→          </Select>
+   638→          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+   639→            <Icon name="info" className="size-3.5" />
+   640→            <span>
+   641→              Current preference: <span className="font-medium text-foreground">{mounted ? current.label : "English"}</span>
+   642→            </span>
+   643→          </div>
+   644→        </div>
+   645→      </SettingsCard>
+   646→
+   647→      <SettingsCard
+   648→        title="Date & number format"
+   649→        description="Regional formatting for dates, currencies, and numbers."
+   650→        icon="globe"
+   651→      >
+   652→        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+   653→          <div className="space-y-1.5">
+   654→            <Label>Date format</Label>
+   655→            <Select defaultValue="mdy">
+   656→              <SelectTrigger className="w-full">
+   657→                <SelectValue />
+   658→              </SelectTrigger>
+   659→              <SelectContent>
+   660→                <SelectItem value="mdy">Jun 30, 2026 (US)</SelectItem>
+   661→                <SelectItem value="dmy">30 Jun 2026 (UK)</SelectItem>
+   662→                <SelectItem value="ymd">2026-06-30 (ISO)</SelectItem>
+   663→              </SelectContent>
+   664→            </Select>
+   665→          </div>
+   666→          <div className="space-y-1.5">
+   667→            <Label>Currency</Label>
+   668→            <Select defaultValue="usd">
+   669→              <SelectTrigger className="w-full">
+   670→                <SelectValue />
+   671→              </SelectTrigger>
+   672→              <SelectContent>
+   673→                <SelectItem value="usd">USD — US Dollar ($)</SelectItem>
+   674→                <SelectItem value="eur">EUR — Euro (€)</SelectItem>
+   675→                <SelectItem value="gbp">GBP — Pound (£)</SelectItem>
+   676→                <SelectItem value="jpy">JPY — Yen (¥)</SelectItem>
+   677→              </SelectContent>
+   678→            </Select>
+   679→          </div>
+   680→        </div>
+   681→      </SettingsCard>
+   682→    </div>
+   683→  );
+   684→}
+   685→
+   686→// ─── 4. Notifications ──────────────────────────────────────────────────────
+   687→function NotificationsTab() {
+   688→  const [prefs, setPrefs] = React.useState<Record<string, boolean>>({
+   689→    email: true,
+   690→    tasks: true,
+   691→    publish: true,
+   692→    weekly: false,
+   693→    trends: true,
+   694→  });
+   695→  const [mounted, setMounted] = React.useState(false);
+   696→
+   697→  React.useEffect(() => {
+   698→    setPrefs(get<Record<string, boolean>>("notifications", {
+   699→      email: true,
+   700→      tasks: true,
+   701→      publish: true,
+   702→      weekly: false,
+   703→      trends: true,
+   704→    }));
+   705→    setMounted(true);
+   706→  }, []);
+   707→
+   708→  const toggle = (key: string, value: boolean) => {
+   709→    const next = { ...prefs, [key]: value };
+   710→    setPrefs(next);
+   711→    set("notifications", next);
+   712→    const label = NOTIF_KEYS.find((n) => n.key === key)?.label ?? key;
+   713→    toast.success(`${label} ${value ? "enabled" : "disabled"}`);
+   714→  };
+   715→
+   716→  return (
+   717→    <div className="space-y-5">
+   718→      <SettingsCard
+   719→        title="Notification channels"
+   720→        description="Control what the studio pings you about, and how often."
+   721→        icon="bell"
+   722→      >
+   723→        <div className="divide-y divide-border/60">
+   724→          {NOTIF_KEYS.map((n) => (
+   725→            <div
+   726→              key={n.key}
+   727→              className="flex items-start justify-between gap-4 py-3.5 first:pt-0 last:pb-0"
+   728→            >
+   729→              <div className="flex items-start gap-3 min-w-0">
+   730→                <div className="size-9 rounded-lg bg-primary/10 grid place-items-center shrink-0">
+   731→                  <Icon name={n.icon} className="size-4 text-primary" />
+   732→                </div>
+   733→                <div className="min-w-0">
+   734→                  <p className="text-sm font-medium">{n.label}</p>
+   735→                  <p className="text-xs text-muted-foreground mt-0.5">
+   736→                    {n.desc}
+   737→                  </p>
+   738→                </div>
+   739→              </div>
+   740→              <Switch
+   741→                checked={mounted ? !!prefs[n.key] : n.key !== "weekly"}
+   742→                onCheckedChange={(v) => toggle(n.key, v)}
+   743→                aria-label={n.label}
+   744→              />
+   745→            </div>
+   746→          ))}
+   747→        </div>
+   748→      </SettingsCard>
+   749→
+   750→      <SettingsCard
+   751→        title="Quiet hours"
+   752→        description="Pause non-urgent notifications during focus blocks."
+   753→        icon="clock"
+   754→      >
+   755→        <div className="grid grid-cols-2 gap-3">
+   756→          <div className="space-y-1.5">
+   757→            <Label htmlFor="quiet-start">Start</Label>
+   758→            <Input id="quiet-start" type="time" defaultValue="22:00" />
+   759→          </div>
+   760→          <div className="space-y-1.5">
+   761→            <Label htmlFor="quiet-end">End</Label>
+   762→            <Input id="quiet-end" type="time" defaultValue="07:00" />
+   763→          </div>
+   764→        </div>
+   765→        <p className="text-xs text-muted-foreground mt-3">
+   766→          Trend alerts and publish reminders always come through.
+   767→        </p>
+   768→      </SettingsCard>
+   769→    </div>
+   770→  );
+   771→}
+   772→
+   773→// ─── 5. Security ───────────────────────────────────────────────────────────
+   774→function SecurityTab() {
+   775→  const [twoFactor, setTwoFactor] = React.useState(false);
+   776→  const [mounted, setMounted] = React.useState(false);
+   777→
+   778→  React.useEffect(() => {
+   779→    setTwoFactor(get<boolean>("twoFactor", false));
+   780→    setMounted(true);
+   781→  }, []);
+   782→
+   783→  return (
+   784→    <div className="space-y-5">
+   785→      <SettingsCard
+   786→        title="Session"
+   787→        description="Your current signed-in session on this device."
+   788→        icon="shield"
+   789→        action={
+   790→          <Pill color="emerald" icon="check-circle">
+   791→            Active
+   792→          </Pill>
+   793→        }
+   794→      >
+   795→        <div className="flex items-center gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3">
+   796→          <div className="size-9 rounded-lg bg-emerald-500/10 grid place-items-center">
+   797→            <Icon name="check-circle" className="size-5 text-emerald-600 dark:text-emerald-400" />
+   798→          </div>
+   799→          <div className="flex-1 min-w-0">
+   800→            <p className="text-sm font-medium">Session active</p>
+   801→            <p className="text-xs text-muted-foreground">
+   802→              Signed in {mounted ? "just now" : "recently"} · this browser
+   803→            </p>
+   804→          </div>
+   805→          <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
+   806→            Secure
+   807→          </Badge>
+   808→        </div>
+   809→      </SettingsCard>
+   810→
+   811→      <SettingsCard
+   812→        title="Password"
+   813→        description="Change the password used to sign in to your studio."
+   814→        icon="shield"
+   815→      >
+   816→        <div className="space-y-3">
+   817→          <div className="space-y-1.5">
+   818→            <Label>Current password</Label>
+   819→            <Input type="password" defaultValue="password" disabled className="bg-muted/40" />
+   820→          </div>
+   821→          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+   822→            <div className="space-y-1.5">
+   823→              <Label>New password</Label>
+   824→              <Input type="password" placeholder="••••••••" disabled />
+   825→            </div>
+   826→            <div className="space-y-1.5">
+   827→              <Label>Confirm new password</Label>
+   828→              <Input type="password" placeholder="••••••••" disabled />
+   829→            </div>
+   830→          </div>
+   831→          <div className="flex items-center gap-2 pt-1">
+   832→            <Button disabled>
+   833→              <Icon name="shield" className="size-4" />
+   834→              Update password
+   835→            </Button>
+   836→            <Badge variant="outline" className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20">
+   837→              Coming soon
+   838→            </Badge>
+   839→          </div>
+   840→        </div>
+   841→      </SettingsCard>
+   842→
+   843→      <SettingsCard
+   844→        title="Two-factor authentication"
+   845→        description="Add an extra layer of security with a TOTP authenticator app."
+   846→        icon="shield"
+   847→      >
+   848→        <div className="flex items-start justify-between gap-4">
+   849→          <div className="flex items-start gap-3">
+   850→            <div className="size-9 rounded-lg bg-primary/10 grid place-items-center shrink-0">
+   851→              <Icon name="shield" className="size-4 text-primary" />
+   852→            </div>
+   853→            <div>
+   854→              <p className="text-sm font-medium">
+   855→                Authenticator app {mounted && twoFactor && (
+   856→                  <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400">· Enabled</span>
+   857→                )}
+   858→              </p>
+   859→              <p className="text-xs text-muted-foreground mt-0.5">
+   860→                Use Google Authenticator, 1Password, or Authy to generate codes.
+   861→              </p>
+   862→            </div>
+   863→          </div>
+   864→          <Switch
+   865→            checked={mounted ? twoFactor : false}
+   866→            onCheckedChange={(v) => {
+   867→              setTwoFactor(v);
+   868→              set("twoFactor", v);
+   869→              toast.success(`Two-factor authentication ${v ? "enabled" : "disabled"}`);
+   870→            }}
+   871→            aria-label="Toggle two-factor authentication"
+   872→          />
+   873→        </div>
+   874→      </SettingsCard>
+   875→
+   876→      <SettingsCard
+   877→        title="Active devices"
+   878→        description="Devices currently signed in to your studio account."
+   879→        icon="globe"
+   880→      >
+   881→        <div className="divide-y divide-border/60">
+   882→          {DEVICES.map((d) => (
+   883→            <div
+   884→              key={d.id}
+   885→              className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
+   886→            >
+   887→              <div className="flex items-center gap-3 min-w-0">
+   888→                <div className="size-9 rounded-lg bg-accent grid place-items-center shrink-0">
+   889→                  <Icon name="globe" className="size-4 text-muted-foreground" />
+   890→                </div>
+   891→                <div className="min-w-0">
+   892→                  <p className="text-sm font-medium truncate">{d.name}</p>
+   893→                  <p className="text-xs text-muted-foreground truncate">
+   894→                    {d.location} · {d.last}
+   895→                  </p>
+   896→                </div>
+   897→              </div>
+   898→              {d.current ? (
+   899→                <Pill color="emerald" icon="check-circle">This device</Pill>
+   900→              ) : (
+   901→                <Button variant="ghost" size="sm" className="text-rose-600 dark:text-rose-400 hover:bg-rose-500/10">
+   902→                  Sign out
+   903→                </Button>
+   904→              )}
+   905→            </div>
+   906→          ))}
+   907→        </div>
+   908→      </SettingsCard>
+   909→    </div>
+   910→  );
+   911→}
+   912→
+   913→// ─── 6. Data & Backup ──────────────────────────────────────────────────────
+   914→interface ExportMeta {
+   915→  app: string;
+   916→  version: string;
+   917→  exportedAt: string;
+   918→  counts: Record<string, number>;
+   919→}
+   920→
+   921→function DataTab() {
+   922→  const [meta, setMeta] = React.useState<ExportMeta | null>(null);
+   923→  const [loading, setLoading] = React.useState(false);
+   924→  const [exporting, setExporting] = React.useState(false);
+   925→  const [importing, setImporting] = React.useState(false);
+   926→  const fileRef = React.useRef<HTMLInputElement>(null);
+   927→
+   928→  const loadStats = React.useCallback(async () => {
+   929→    setLoading(true);
+   930→    try {
+   931→      const res = await fetch("/api/export");
+   932→      if (!res.ok) throw new Error("Failed to load stats");
+   933→      const json = (await res.json()) as { meta: ExportMeta };
+   934→      setMeta(json.meta);
+   935→    } catch {
+   936→      toast.error("Couldn't load database stats");
+   937→    } finally {
+   938→      setLoading(false);
+   939→    }
+   940→  }, []);
+   941→
+   942→  React.useEffect(() => {
+   943→    loadStats();
+   944→  }, [loadStats]);
+   945→
+   946→  const onExport = async () => {
+   947→    setExporting(true);
+   948→    try {
+   949→      const res = await fetch("/api/export");
+   950→      if (!res.ok) throw new Error("Export failed");
+   951→      const json = await res.json();
+   952→      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+   953→      downloadJson(`yt-studio-backup-${stamp}.json`, json);
+   954→      toast.success("Backup exported", {
+   955→        description: `${Object.values(json.meta.counts).reduce((a, b) => a + b, 0)} records downloaded.`,
+   956→      });
+   957→    } catch {
+   958→      toast.error("Export failed — please try again");
+   959→    } finally {
+   960→      setExporting(false);
+   961→    }
+   962→  };
+   963→
+   964→  const onImportFile = async (file: File) => {
+   965→    setImporting(true);
+   966→    try {
+   967→      const text = await file.text();
+   968→      let payload: unknown;
+   969→      try {
+   970→        payload = JSON.parse(text);
+   971→      } catch {
+   972→        throw new Error("Invalid JSON file");
+   973→      }
+   974→      const res = await fetch("/api/import", {
+   975→        method: "POST",
+   976→        headers: { "Content-Type": "application/json" },
+   977→        body: JSON.stringify(payload),
+   978→      });
+   979→      if (!res.ok) {
+   980→        const err = (await res.json().catch(() => ({}))) as { error?: string };
+   981→        throw new Error(err.error ?? `Import failed (${res.status})`);
+   982→      }
+   983→      const result = (await res.json()) as { counts: Record<string, number> };
+   984→      const total = Object.values(result.counts).reduce((a, b) => a + b, 0);
+   985→      toast.success("Backup restored", {
+   986→        description: `${total} records imported across ${Object.keys(result.counts).length} tables.`,
+   987→      });
+   988→      // Reload after a beat so all sections see fresh data.
+   989→      setTimeout(() => window.location.reload(), 800);
+   990→    } catch (e) {
+   991→      const msg = e instanceof Error ? e.message : "Import failed";
+   992→      toast.error("Import failed", { description: msg });
+   993→    } finally {
+   994→      setImporting(false);
+   995→      if (fileRef.current) fileRef.current.value = "";
+   996→    }
+   997→  };
+   998→
+   999→  const counts = meta?.counts ?? {};
+  1000→  const totalRecords = Object.values(counts).reduce((a, b) => a + b, 0);
+  1001→
+  1002→  return (
+  1003→    <div className="space-y-5">
+  1004→      <SettingsCard
+  1005→        title="Backup & restore"
+  1006→        description="Export the entire studio to a JSON file, or restore from a previous backup."
+  1007→        icon="database"
+  1008→      >
+  1009→        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+  1010→          <button
+  1011→            onClick={onExport}
+  1012→            disabled={exporting}
+  1013→            className="group flex flex-col items-start gap-2 rounded-xl border border-border/60 p-4 text-left transition-all hover:border-primary/40 hover:bg-primary/5 disabled:opacity-60"
+  1014→          >
+  1015→            <div className="size-9 rounded-lg bg-emerald-500/10 grid place-items-center">
+  1016→              <Icon
+  1017→                name={exporting ? "refresh" : "download"}
+  1018→                className={cn("size-4 text-emerald-600 dark:text-emerald-400", exporting && "animate-spin")}
+  1019→              />
+  1020→            </div>
+  1021→            <div>
+  1022→              <p className="text-sm font-semibold">Export data</p>
+  1023→              <p className="text-xs text-muted-foreground mt-0.5">
+  1024→                Download a full JSON backup of every table.
+  1025→              </p>
+  1026→            </div>
+  1027→          </button>
+  1028→
+  1029→          <button
+  1030→            onClick={() => fileRef.current?.click()}
+  1031→            disabled={importing}
+  1032→            className="group flex flex-col items-start gap-2 rounded-xl border border-border/60 p-4 text-left transition-all hover:border-primary/40 hover:bg-primary/5 disabled:opacity-60"
+  1033→          >
+  1034→            <div className="size-9 rounded-lg bg-amber-500/10 grid place-items-center">
+  1035→              <Icon
+  1036→                name={importing ? "refresh" : "upload"}
+  1037→                className={cn("size-4 text-amber-600 dark:text-amber-400", importing && "animate-spin")}
+  1038→              />
+  1039→            </div>
+  1040→            <div>
+  1041→              <p className="text-sm font-semibold">Import data</p>
+  1042→              <p className="text-xs text-muted-foreground mt-0.5">
+  1043→                Restore a backup JSON. Replaces current data.
+  1044→              </p>
+  1045→            </div>
+  1046→          </button>
+  1047→        </div>
+  1048→        <input
+  1049→          ref={fileRef}
+  1050→          type="file"
+  1051→          accept="application/json,.json"
+  1052→          className="hidden"
+  1053→          onChange={(e) => {
+  1054→            const f = e.target.files?.[0];
+  1055→            if (f) onImportFile(f);
+  1056→          }}
+  1057→        />
+  1058→        <Separator className="my-4" />
+  1059→        <div className="flex items-center justify-between gap-3">
+  1060→          <div>
+  1061→            <p className="text-sm font-medium">Reset to seed</p>
+  1062→            <p className="text-xs text-muted-foreground mt-0.5">
+  1063→              Restore the original demo dataset. Requires admin access.
+  1064→            </p>
+  1065→          </div>
+  1066→          <Button
+  1067→            variant="outline"
+  1068→            className="border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10"
+  1069→            onClick={() =>
+  1070→              toast("Contact admin to re-seed", {
+  1071→                description: "Re-seeding wipes all current data. Reach out to your workspace admin.",
+  1072→              })
+  1073→            }
+  1074→          >
+  1075→            <Icon name="refresh" className="size-4" />
+  1076→            Reset
+  1077→          </Button>
+  1078→        </div>
+  1079→      </SettingsCard>
+  1080→
+  1081→      <SettingsCard
+  1082→        title="Database stats"
+  1083→        description="Live record counts per table in your studio database."
+  1084→        icon="bar-chart-3"
+  1085→        action={
+  1086→          <Button variant="ghost" size="sm" onClick={loadStats} disabled={loading}>
+  1087→            <Icon name={loading ? "refresh" : "refresh"} className={cn("size-4", loading && "animate-spin")} />
+  1088→            Refresh
+  1089→          </Button>
+  1090→        }
+  1091→      >
+  1092→        {loading && !meta ? (
+  1093→          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+  1094→            {Array.from({ length: 8 }).map((_, i) => (
+  1095→              <div key={i} className="shimmer h-16 rounded-lg bg-muted/40" />
+  1096→            ))}
+  1097→          </div>
+  1098→        ) : (
+  1099→          <>
+  1100→            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+  1101→              {Object.entries(counts).map(([key, count]) => (
+  1102→                <div
+  1103→                  key={key}
+  1104→                  className="rounded-lg border border-border/60 bg-muted/30 p-3"
+  1105→                >
+  1106→                  <p className="text-xs text-muted-foreground capitalize truncate">{key}</p>
+  1107→                  <p className="text-lg font-bold tabular-nums mt-0.5">{count}</p>
+  1108→                </div>
+  1109→              ))}
+  1110→            </div>
+  1111→            <Separator className="my-4" />
+  1112→            <div className="flex items-center justify-between">
+  1113→              <span className="text-sm text-muted-foreground">Total records</span>
+  1114→              <span className="text-sm font-bold tabular-nums">{totalRecords}</span>
+  1115→            </div>
+  1116→            <div className="flex items-center justify-between mt-1">
+  1117→              <span className="text-sm text-muted-foreground">Last exported</span>
+  1118→              <span className="text-sm font-medium">
+  1119→                {meta?.exportedAt
+  1120→                  ? new Date(meta.exportedAt).toLocaleString()
+  1121→                  : "—"}
+  1122→              </span>
+  1123→            </div>
+  1124→            <div className="flex items-center justify-between mt-1">
+  1125→              <span className="text-sm text-muted-foreground">Database</span>
+  1126→              <span className="text-sm font-medium">SQLite · db/custom.db</span>
+  1127→            </div>
+  1128→          </>
+  1129→        )}
+  1130→      </SettingsCard>
+  1131→    </div>
+  1132→  );
+  1133→}
+  1134→
+  1135→// ─── 7. Keyboard shortcuts ─────────────────────────────────────────────────
+  1136→function ShortcutsTab() {
+  1137→  const groups = Array.from(new Set(SHORTCUTS.map((s) => s.group)));
+  1138→
+  1139→  return (
+  1140→    <div className="space-y-5">
+  1141→      <SettingsCard
+  1142→        title="Keyboard shortcuts"
+  1143→        description="Move faster through the studio — no mouse required."
+  1144→        icon="keyboard"
+  1145→      >
+  1146→        <ScrollArea className="max-h-[28rem]">
+  1147→          <div className="space-y-5 pr-2">
+  1148→            {groups.map((g) => (
+  1149→              <div key={g}>
+  1150→                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+  1151→                  {g}
+  1152→                </p>
+  1153→                <div className="space-y-1">
+  1154→                  {SHORTCUTS.filter((s) => s.group === g).map((s, idx) => (
+  1155→                    <div
+  1156→                      key={`${s.label}-${idx}`}
+  1157→                      className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 hover:bg-accent/40 transition-colors"
+  1158→                    >
+  1159→                      <span className="text-sm">{s.label}</span>
+  1160→                      <div className="flex items-center gap-1">
+  1161→                        {s.keys.map((k, i) => (
+  1162→                          <kbd
+  1163→                            key={i}
+  1164→                            className="rounded border border-border/70 bg-muted px-1.5 py-0.5 text-[11px] font-mono font-medium text-muted-foreground shadow-sm"
+  1165→                          >
+  1166→                            {k}
+  1167→                          </kbd>
+  1168→                        ))}
+  1169→                      </div>
+  1170→                    </div>
+  1171→                  ))}
+  1172→                </div>
+  1173→              </div>
+  1174→            ))}
+  1175→          </div>
+  1176→        </ScrollArea>
+  1177→      </SettingsCard>
+  1178→
+  1179→      <SettingsCard
+  1180→        title="Tip"
+  1181→        description="Press ⌘K anywhere to open the command palette and jump to any section."
+  1182→        icon="lightbulb"
+  1183→      >
+  1184→        <div className="flex items-center gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3">
+  1185→          <Icon name="command" className="size-5 text-amber-600 dark:text-amber-400" />
+  1186→          <p className="text-sm">
+  1187→            <span className="font-semibold">Command palette</span> is the fastest
+  1188→            way to navigate — try{" "}
+  1189→            <kbd className="rounded border border-border/70 bg-muted px-1.5 py-0.5 text-[11px] font-mono">
+  1190→              ⌘K
+  1191→            </kbd>{" "}
+  1192→            now.
+  1193→          </p>
+  1194→        </div>
+  1195→      </SettingsCard>
+  1196→    </div>
+  1197→  );
+  1198→}
+  1199→
+  1200→// ─── 8. About ──────────────────────────────────────────────────────────────
+  1201→function AboutTab() {
+  1202→  const buildDate = "2026-06-30";
+  1203→  const version = "1.0.0";
+  1204→
+  1205→  return (
+  1206→    <div className="space-y-5">
+  1207→      <SettingsCard
+  1208→        title="About this studio"
+  1209→        description="A premium operating system for solo YouTube automation creators."
+  1210→        icon="info"
+  1211→      >
+  1212→        <div className="flex flex-col sm:flex-row items-start gap-5">
+  1213→          <div className="size-20 rounded-2xl bg-gradient-to-br from-emerald-400 via-teal-500 to-amber-500 grid place-items-center shadow-lg shadow-emerald-500/20 shrink-0">
+  1214→            <Icon name="youtube" className="size-9 text-white" />
+  1215→          </div>
+  1216→          <div className="flex-1 min-w-0 space-y-3">
+  1217→            <div>
+  1218→              <p className="text-lg font-bold tracking-tight">My YT Automation Studio</p>
+  1219→              <p className="text-sm text-muted-foreground">
+  1220→                Built for creators · v{version}
+  1221→              </p>
+  1222→            </div>
+  1223→            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm">
+  1224→              <div>
+  1225→                <p className="text-xs text-muted-foreground">Version</p>
+  1226→                <p className="font-medium tabular-nums">{version}</p>
+  1227→              </div>
+  1228→              <div>
+  1229→                <p className="text-xs text-muted-foreground">Build</p>
+  1230→                <p className="font-medium tabular-nums">{buildDate}</p>
+  1231→              </div>
+  1232→              <div>
+  1233→                <p className="text-xs text-muted-foreground">Engine</p>
+  1234→                <p className="font-medium">Next.js 16</p>
+  1235→              </div>
+  1236→            </div>
+  1237→            <Separator />
+  1238→            <p className="text-sm text-muted-foreground">
+  1239→              Manage channels, content, finance, and AI tools from one
+  1240→              glassmorphic command center. Designed dark-first, optimized for
+  1241→              long focus sessions.
+  1242→            </p>
+  1243→          </div>
+  1244→        </div>
+  1245→      </SettingsCard>
+  1246→
+  1247→      <SettingsCard
+  1248→        title="Resources"
+  1249→        description="Handy links for getting the most out of the studio."
+  1250→        icon="book-open"
+  1251→      >
+  1252→        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+  1253→          {[
+  1254→            { label: "Documentation", icon: "book-open", desc: "Guides and tutorials" },
+  1255→            { label: "Keyboard shortcuts", icon: "keyboard", desc: "Move faster" },
+  1256→            { label: "Changelog", icon: "sparkles", desc: "What's new" },
+  1257→            { label: "Send feedback", icon: "message", desc: "Tell us what's missing" },
+  1258→          ].map((r) => (
+  1259→            <button
+  1260→              key={r.label}
+  1261→              onClick={() => toast(`${r.label} — coming soon`)}
+  1262→              className="group flex items-center gap-3 rounded-lg border border-border/60 p-3 text-left transition-all hover:border-primary/40 hover:bg-accent/40"
+  1263→            >
+  1264→              <div className="size-9 rounded-lg bg-primary/10 grid place-items-center shrink-0">
+  1265→                <Icon name={r.icon} className="size-4 text-primary" />
+  1266→              </div>
+  1267→              <div className="flex-1 min-w-0">
+  1268→                <p className="text-sm font-medium">{r.label}</p>
+  1269→                <p className="text-xs text-muted-foreground truncate">{r.desc}</p>
+  1270→              </div>
+  1271→              <Icon
+  1272→                name="chevron-right"
+  1273→                className="size-4 text-muted-foreground group-hover:text-primary transition-colors"
+  1274→              />
+  1275→            </button>
+  1276→          ))}
+  1277→        </div>
+  1278→      </SettingsCard>
+  1279→
+  1280→      <SettingsCard
+  1281→        title="Made for creators"
+  1282→        icon="heart"
+  1283→      >
+  1284→        <div className="flex items-center gap-3 rounded-xl border border-rose-500/20 bg-rose-500/5 p-4">
+  1285→          <Icon name="heart" className="size-5 text-rose-600 dark:text-rose-400" />
+  1286→          <p className="text-sm">
+  1287→            Crafted with care for the YouTube automation community. ©{" "}
+  1288→            {new Date().getFullYear()} · Built with Next.js, Prisma, and shadcn/ui.
+  1289→          </p>
+  1290→        </div>
+  1291→      </SettingsCard>
+  1292→    </div>
+  1293→  );
+  1294→}
+  1295→

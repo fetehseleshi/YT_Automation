@@ -1,0 +1,1072 @@
+     1→"use client";
+     2→
+     3→import { useEffect, useMemo, useState } from "react";
+     4→import { motion } from "framer-motion";
+     5→import { toast } from "sonner";
+     6→import {
+     7→  AreaChart,
+     8→  Area,
+     9→  BarChart,
+    10→  Bar,
+    11→  LineChart,
+    12→  Line,
+    13→  ResponsiveContainer,
+    14→  XAxis,
+    15→  YAxis,
+    16→  Tooltip,
+    17→  CartesianGrid,
+    18→  PieChart,
+    19→  Pie,
+    20→  Cell,
+    21→} from "recharts";
+    22→import { SectionHeader, StatCard, Pill, Progress } from "@/components/shared/ui";
+    23→import { Icon } from "@/components/icon";
+    24→import {
+    25→  api,
+    26→  formatNumber,
+    27→  formatMoney,
+    28→  formatCompactMoney,
+    29→  relativeTime,
+    30→  colorFor,
+    31→} from "@/lib/api";
+    32→import { Card } from "@/components/ui/card";
+    33→import { Button } from "@/components/ui/button";
+    34→import { cn } from "@/lib/utils";
+    35→
+    36→// ─── Types ────────────────────────────────────────────────────────────────────
+    37→interface Totals {
+    38→  totalChannels: number;
+    39→  totalVideosPublished: number;
+    40→  videosScheduled: number;
+    41→  monthlyRevenue: number;
+    42→  estimatedRPM: number;
+    43→  totalSubscribers: number;
+    44→  totalViews: number;
+    45→  watchTimeHours: number;
+    46→  monetizedChannels: number;
+    47→}
+    48→interface SeriesPoint {
+    49→  month: string;
+    50→  income?: number;
+    51→  expense?: number;
+    52→  profit?: number;
+    53→  views?: number;
+    54→  subs?: number;
+    55→}
+    56→interface ActivityItem {
+    57→  id: string;
+    58→  type: string;
+    59→  message: string;
+    60→  section: string;
+    61→  createdAt: string;
+    62→}
+    63→interface TaskItem {
+    64→  id: string;
+    65→  title: string;
+    66→  priority: string;
+    67→  status: string;
+    68→  category: string;
+    69→  progress: number;
+    70→  dueDate: string | null;
+    71→}
+    72→interface GoalItem {
+    73→  id: string;
+    74→  title: string;
+    75→  current: number;
+    76→  target: number;
+    77→  unit: string;
+    78→  color: string;
+    79→}
+    80→interface ChannelBreakdownItem {
+    81→  name: string;
+    82→  color: string;
+    83→  subscribers: number;
+    84→  revenue: number;
+    85→  views: number;
+    86→}
+    87→interface TopVideo {
+    88→  id: string;
+    89→  title: string;
+    90→  views: number;
+    91→  revenue: number;
+    92→  ctr: number;
+    93→  channelName: string;
+    94→  channelColor: string;
+    95→}
+    96→interface DashboardData {
+    97→  totals: Totals;
+    98→  channelHealth: number;
+    99→  revenueSeries: { month: string; income: number; expense: number; profit: number }[];
+   100→  viewsSeries: { month: string; views: number }[];
+   101→  subscriberGrowth: { month: string; subs: number }[];
+   102→  recentActivity: ActivityItem[];
+   103→  upcomingTasks: TaskItem[];
+   104→  dailyGoals: GoalItem[];
+   105→  weeklyGoals: GoalItem[];
+   106→  channelBreakdown: ChannelBreakdownItem[];
+   107→  topVideos: TopVideo[];
+   108→  scheduledDates: string[];
+   109→}
+   110→
+   111→// ─── Static config ────────────────────────────────────────────────────────────
+   112→const QUOTES = [
+   113→  "Consistency compounds. Ship one video today.",
+   114→  "The algorithm rewards momentum — keep moving.",
+   115→  "Your next breakthrough is one upload away.",
+   116→  "Done is better than perfect. Publish and learn.",
+   117→  "Small daily uploads build legendary channels.",
+   118→  "Focus on the viewer; the views will follow.",
+   119→  "Today's script is tomorrow's revenue.",
+   120→  "Build the system, then trust the system.",
+   121→];
+   122→
+   123→const CHART_HEX: Record<string, string> = {
+   124→  emerald: "#10b981",
+   125→  amber: "#f59e0b",
+   126→  rose: "#f43f5e",
+   127→  teal: "#14b8a6",
+   128→  orange: "#f97316",
+   129→};
+   130→
+   131→const PRIORITY_COLOR: Record<string, string> = {
+   132→  urgent: "rose",
+   133→  high: "amber",
+   134→  medium: "teal",
+   135→  low: "emerald",
+   136→};
+   137→
+   138→const ACTIVITY_ICON: Record<string, { icon: string; color: string }> = {
+   139→  success: { icon: "check-circle", color: "emerald" },
+   140→  info: { icon: "info", color: "teal" },
+   141→  warning: { icon: "alert-triangle", color: "amber" },
+   142→  error: { icon: "alert-triangle", color: "rose" },
+   143→};
+   144→
+   145→// ─── Section component ────────────────────────────────────────────────────────
+   146→export function DashboardSection() {
+   147→  const [data, setData] = useState<DashboardData | null>(null);
+   148→  const [loading, setLoading] = useState(true);
+   149→
+   150→  useEffect(() => {
+   151→    let alive = true;
+   152→    api<DashboardData>("/api/dashboard")
+   153→      .then((d) => {
+   154→        if (!alive) return;
+   155→        setData(d);
+   156→        setLoading(false);
+   157→      })
+   158→      .catch((e) => {
+   159→        if (!alive) return;
+   160→        console.error(e);
+   161→        toast.error("Failed to load dashboard data");
+   162→        setLoading(false);
+   163→      });
+   164→    return () => {
+   165→      alive = false;
+   166→    };
+   167→  }, []);
+   168→
+   169→  if (loading || !data) return <DashboardSkeleton />;
+   170→
+   171→  return (
+   172→    <div className="space-y-5">
+   173→      <GreetingHero monetizedChannels={data.totals.monetizedChannels} />
+   174→      <StatGrid totals={data.totals} />
+   175→      <ChartsRow
+   176→        revenueSeries={data.revenueSeries}
+   177→        subscriberGrowth={data.subscriberGrowth}
+   178→      />
+   179→      <HealthAndBreakdown
+   180→        channelHealth={data.channelHealth}
+   181→        channelBreakdown={data.channelBreakdown}
+   182→      />
+   183→      <ThreeColumnRow
+   184→        activity={data.recentActivity}
+   185→        tasks={data.upcomingTasks}
+   186→        dailyGoals={data.dailyGoals}
+   187→        weeklyGoals={data.weeklyGoals}
+   188→      />
+   189→      <CalendarPreview scheduledDates={data.scheduledDates} />
+   190→      <TopVideos topVideos={data.topVideos} />
+   191→    </div>
+   192→  );
+   193→}
+   194→
+   195→// ─── Greeting hero ────────────────────────────────────────────────────────────
+   196→function GreetingHero({ monetizedChannels }: { monetizedChannels: number }) {
+   197→  const { greeting, dateStr } = useMemo(() => {
+   198→    const h = new Date().getHours();
+   199→    const g = h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+   200→    const d = new Date().toLocaleDateString("en-US", {
+   201→      weekday: "long",
+   202→      month: "long",
+   203→      day: "numeric",
+   204→    });
+   205→    return { greeting: g, dateStr: d };
+   206→  }, []);
+   207→
+   208→  const quote = useMemo(() => {
+   209→    const dayOfYear = Math.floor(
+   210→      (Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000
+   211→    );
+   212→    return QUOTES[dayOfYear % QUOTES.length];
+   213→  }, []);
+   214→
+   215→  return (
+   216→    <motion.div
+   217→      initial={{ opacity: 0, y: 16 }}
+   218→      animate={{ opacity: 1, y: 0 }}
+   219→      transition={{ duration: 0.5, ease: [0.2, 0.8, 0.2, 1] }}
+   220→    >
+   221→      <Card className="relative overflow-hidden border-border/60 p-6 sm:p-8 glass">
+   222→        {/* gradient blurs */}
+   223→        <div className="pointer-events-none absolute -top-20 -right-16 size-72 rounded-full bg-emerald-500/20 blur-3xl" />
+   224→        <div className="pointer-events-none absolute -bottom-24 -left-10 size-72 rounded-full bg-teal-500/15 blur-3xl" />
+   225→        <div className="pointer-events-none absolute top-1/2 right-1/3 size-40 rounded-full bg-amber-500/10 blur-3xl" />
+   226→
+   227→        <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+   228→          <div className="min-w-0 space-y-2">
+   229→            <div className="flex items-center gap-2">
+   230→              <Pill color="emerald" icon="sparkles">
+   231→                Studio Overview
+   232→              </Pill>
+   233→              <span className="text-xs text-muted-foreground tabular-nums">{dateStr}</span>
+   234→            </div>
+   235→            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight">
+   236→              {greeting},{" "}
+   237→              <span className="text-gradient">Creator</span>
+   238→            </h1>
+   239→            <p className="text-sm sm:text-base text-muted-foreground italic max-w-xl">
+   240→              &ldquo;{quote}&rdquo;
+   241→            </p>
+   242→            <div className="flex flex-wrap items-center gap-3 pt-1">
+   243→              <Button size="sm" className="gap-2 rounded-lg">
+   244→                <Icon name="brain" className="size-4" />
+   245→                Open AI Assistant
+   246→              </Button>
+   247→              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+   248→                <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+   249→                {monetizedChannels} monetized channels live
+   250→              </div>
+   251→            </div>
+   252→          </div>
+   253→
+   254→          {/* mini sparkline decoration */}
+   255→          <div className="hidden lg:block w-64 h-24 shrink-0">
+   256→            <ResponsiveContainer width="100%" height="100%">
+   257→              <AreaChart data={generateMiniSpark()} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+   258→                <defs>
+   259→                  <linearGradient id="heroSpark" x1="0" y1="0" x2="0" y2="1">
+   260→                    <stop offset="0%" stopColor={CHART_HEX.emerald} stopOpacity={0.6} />
+   261→                    <stop offset="100%" stopColor={CHART_HEX.emerald} stopOpacity={0} />
+   262→                  </linearGradient>
+   263→                </defs>
+   264→                <Area
+   265→                  type="monotone"
+   266→                  dataKey="v"
+   267→                  stroke={CHART_HEX.emerald}
+   268→                  strokeWidth={2.5}
+   269→                  fill="url(#heroSpark)"
+   270→                />
+   271→              </AreaChart>
+   272→            </ResponsiveContainer>
+   273→          </div>
+   274→        </div>
+   275→      </Card>
+   276→    </motion.div>
+   277→  );
+   278→}
+   279→
+   280→function generateMiniSpark() {
+   281→  return Array.from({ length: 18 }, (_, i) => ({
+   282→    v: Math.round(40 + Math.sin(i / 2) * 18 + i * 1.6 + Math.random() * 6),
+   283→  }));
+   284→}
+   285→
+   286→// ─── Stat grid ────────────────────────────────────────────────────────────────
+   287→function StatGrid({ totals }: { totals: Totals }) {
+   288→  const stats = [
+   289→    {
+   290→      label: "Total Channels",
+   291→      value: formatNumber(totals.totalChannels),
+   292→      icon: "youtube",
+   293→      color: "emerald",
+   294→      delta: 0,
+   295→      hint: `${totals.monetizedChannels} monetized`,
+   296→    },
+   297→    {
+   298→      label: "Videos Published",
+   299→      value: formatNumber(totals.totalVideosPublished),
+   300→      icon: "film",
+   301→      color: "teal",
+   302→      delta: 12,
+   303→      hint: "all time",
+   304→    },
+   305→    {
+   306→      label: "Videos Scheduled",
+   307→      value: formatNumber(totals.videosScheduled),
+   308→      icon: "calendar-days",
+   309→      color: "amber",
+   310→      delta: 8,
+   311→      hint: "in pipeline",
+   312→    },
+   313→    {
+   314→      label: "Monthly Revenue",
+   315→      value: formatCompactMoney(totals.monthlyRevenue),
+   316→      icon: "dollar",
+   317→      color: "emerald",
+   318→      delta: 18,
+   319→      hint: "this month",
+   320→    },
+   321→    {
+   322→      label: "Est. RPM",
+   323→      value: `$${totals.estimatedRPM.toFixed(2)}`,
+   324→      icon: "gauge",
+   325→      color: "orange",
+   326→      delta: 4,
+   327→      hint: "weighted avg",
+   328→    },
+   329→    {
+   330→      label: "Total Subscribers",
+   331→      value: formatNumber(totals.totalSubscribers),
+   332→      icon: "users",
+   333→      color: "rose",
+   334→      delta: 9,
+   335→      hint: "across channels",
+   336→    },
+   337→    {
+   338→      label: "Total Views",
+   339→      value: formatNumber(totals.totalViews),
+   340→      icon: "eye",
+   341→      color: "teal",
+   342→      delta: 15,
+   343→      hint: "all time",
+   344→    },
+   345→    {
+   346→      label: "Watch Time",
+   347→      value: `${formatNumber(totals.watchTimeHours)}h`,
+   348→      icon: "clock",
+   349→      color: "amber",
+   350→      delta: 11,
+   351→      hint: "lifetime",
+   352→    },
+   353→  ];
+   354→
+   355→  return (
+   356→    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+   357→      {stats.map((s, i) => (
+   358→        <StatCard
+   359→          key={s.label}
+   360→          label={s.label}
+   361→          value={s.value}
+   362→          icon={s.icon}
+   363→          color={s.color}
+   364→          delta={s.delta}
+   365→          hint={s.hint}
+   366→          delay={i * 0.04}
+   367→        />
+   368→      ))}
+   369→    </div>
+   370→  );
+   371→}
+   372→
+   373→// ─── Charts row (revenue + subscriber growth) ────────────────────────────────
+   374→function ChartsRow({
+   375→  revenueSeries,
+   376→  subscriberGrowth,
+   377→}: {
+   378→  revenueSeries: { month: string; income: number; expense: number; profit: number }[];
+   379→  subscriberGrowth: { month: string; subs: number }[];
+   380→}) {
+   381→  return (
+   382→    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+   383→      <ChartCard
+   384→        title="Revenue Overview"
+   385→        subtitle="Income vs expense · last 6 months"
+   386→        icon="wallet"
+   387→        delay={0.05}
+   388→      >
+   389→        <ResponsiveContainer width="100%" height={240}>
+   390→          <AreaChart data={revenueSeries} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
+   391→            <defs>
+   392→              <linearGradient id="revIncome" x1="0" y1="0" x2="0" y2="1">
+   393→                <stop offset="0%" stopColor={CHART_HEX.emerald} stopOpacity={0.55} />
+   394→                <stop offset="100%" stopColor={CHART_HEX.emerald} stopOpacity={0} />
+   395→              </linearGradient>
+   396→              <linearGradient id="revProfit" x1="0" y1="0" x2="0" y2="1">
+   397→                <stop offset="0%" stopColor={CHART_HEX.amber} stopOpacity={0.4} />
+   398→                <stop offset="100%" stopColor={CHART_HEX.amber} stopOpacity={0} />
+   399→              </linearGradient>
+   400→              <linearGradient id="revExpense" x1="0" y1="0" x2="0" y2="1">
+   401→                <stop offset="0%" stopColor={CHART_HEX.rose} stopOpacity={0.35} />
+   402→                <stop offset="100%" stopColor={CHART_HEX.rose} stopOpacity={0} />
+   403→              </linearGradient>
+   404→            </defs>
+   405→            <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
+   406→            <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="currentColor" strokeOpacity={0.4} tickLine={false} axisLine={false} />
+   407→            <YAxis tick={{ fontSize: 11 }} stroke="currentColor" strokeOpacity={0.4} tickLine={false} axisLine={false} tickFormatter={(v) => formatCompactMoney(Number(v))} />
+   408→            <Tooltip content={<ChartTooltip formatter={(v) => formatMoney(Number(v))} />} />
+   409→            <Area type="monotone" dataKey="income" stroke={CHART_HEX.emerald} strokeWidth={2.5} fill="url(#revIncome)" name="Income" />
+   410→            <Area type="monotone" dataKey="profit" stroke={CHART_HEX.amber} strokeWidth={2} fill="url(#revProfit)" name="Profit" />
+   411→            <Area type="monotone" dataKey="expense" stroke={CHART_HEX.rose} strokeWidth={2} fill="url(#revExpense)" name="Expense" />
+   412→          </AreaChart>
+   413→        </ResponsiveContainer>
+   414→        <ChartLegend
+   415→          items={[
+   416→            { label: "Income", color: "emerald" },
+   417→            { label: "Profit", color: "amber" },
+   418→            { label: "Expense", color: "rose" },
+   419→          ]}
+   420→        />
+   421→      </ChartCard>
+   422→
+   423→      <ChartCard
+   424→        title="Subscriber Growth"
+   425→        subtitle="Cumulative subscribers · last 6 months"
+   426→        icon="trending-up"
+   427→        delay={0.1}
+   428→      >
+   429→        <ResponsiveContainer width="100%" height={240}>
+   430→          <AreaChart data={subscriberGrowth} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
+   431→            <defs>
+   432→              <linearGradient id="subGrowth" x1="0" y1="0" x2="0" y2="1">
+   433→                <stop offset="0%" stopColor={CHART_HEX.teal} stopOpacity={0.5} />
+   434→                <stop offset="100%" stopColor={CHART_HEX.teal} stopOpacity={0} />
+   435→              </linearGradient>
+   436→            </defs>
+   437→            <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
+   438→            <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="currentColor" strokeOpacity={0.4} tickLine={false} axisLine={false} />
+   439→            <YAxis tick={{ fontSize: 11 }} stroke="currentColor" strokeOpacity={0.4} tickLine={false} axisLine={false} tickFormatter={(v) => formatNumber(Number(v))} />
+   440→            <Tooltip content={<ChartTooltip formatter={(v) => formatNumber(Number(v)) + " subs"} />} />
+   441→            <Area type="monotone" dataKey="subs" stroke={CHART_HEX.teal} strokeWidth={2.5} fill="url(#subGrowth)" name="Subscribers" />
+   442→          </AreaChart>
+   443→        </ResponsiveContainer>
+   444→        <ChartLegend items={[{ label: "Subscribers", color: "teal" }]} />
+   445→      </ChartCard>
+   446→    </div>
+   447→  );
+   448→}
+   449→
+   450→// ─── Channel health + breakdown ───────────────────────────────────────────────
+   451→function HealthAndBreakdown({
+   452→  channelHealth,
+   453→  channelBreakdown,
+   454→}: {
+   455→  channelHealth: number;
+   456→  channelBreakdown: ChannelBreakdownItem[];
+   457→}) {
+   458→  const healthColor =
+   459→    channelHealth >= 85 ? "emerald" : channelHealth >= 70 ? "amber" : "rose";
+   460→  const healthHex = CHART_HEX[healthColor];
+   461→  const healthData = [
+   462→    { name: "Health", value: channelHealth },
+   463→    { name: "Remaining", value: 100 - channelHealth },
+   464→  ];
+   465→
+   466→  return (
+   467→    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+   468→      {/* Health gauge */}
+   469→      <motion.div
+   470→        initial={{ opacity: 0, y: 14 }}
+   471→        animate={{ opacity: 1, y: 0 }}
+   472→        transition={{ duration: 0.45, delay: 0.1, ease: [0.2, 0.8, 0.2, 1] }}
+   473→        className="lg:col-span-1"
+   474→      >
+   475→        <Card className="relative overflow-hidden border-border/60 p-5 h-full glass">
+   476→          <div className="flex items-center gap-2 mb-1">
+   477→            <div className="size-8 rounded-lg bg-primary/10 grid place-items-center">
+   478→              <Icon name="gauge" className="size-4 text-primary" />
+   479→            </div>
+   480→            <div>
+   481→              <p className="text-sm font-semibold">Channel Health</p>
+   482→              <p className="text-xs text-muted-foreground">Average across all channels</p>
+   483→            </div>
+   484→          </div>
+   485→          <div className="relative h-[200px] grid place-items-center">
+   486→            <ResponsiveContainer width="100%" height="100%">
+   487→              <PieChart>
+   488→                <Pie
+   489→                  data={healthData}
+   490→                  dataKey="value"
+   491→                  innerRadius={62}
+   492→                  outerRadius={88}
+   493→                  startAngle={90}
+   494→                  endAngle={-270}
+   495→                  paddingAngle={0}
+   496→                  stroke="none"
+   497→                >
+   498→                  <Cell fill={healthHex} />
+   499→                  <Cell fill="currentColor" fillOpacity={0.08} />
+   500→                </Pie>
+   501→              </PieChart>
+   502→            </ResponsiveContainer>
+   503→            <div className="absolute inset-0 grid place-items-center pointer-events-none">
+   504→              <div className="text-center">
+   505→                <p className="text-4xl font-bold tabular-nums">{channelHealth}</p>
+   506→                <p className="text-xs text-muted-foreground mt-0.5">out of 100</p>
+   507→              </div>
+   508→            </div>
+   509→          </div>
+   510→          <div className="flex items-center justify-center gap-2 mt-1">
+   511→            <Pill color={healthColor} icon="activity">
+   512→              {channelHealth >= 85 ? "Excellent" : channelHealth >= 70 ? "Good" : "Needs attention"}
+   513→            </Pill>
+   514→          </div>
+   515→        </Card>
+   516→      </motion.div>
+   517→
+   518→      {/* Channel breakdown */}
+   519→      <motion.div
+   520→        initial={{ opacity: 0, y: 14 }}
+   521→        animate={{ opacity: 1, y: 0 }}
+   522→        transition={{ duration: 0.45, delay: 0.15, ease: [0.2, 0.8, 0.2, 1] }}
+   523→        className="lg:col-span-2"
+   524→      >
+   525→        <Card className="relative overflow-hidden border-border/60 p-5 h-full glass">
+   526→          <div className="flex items-center justify-between mb-2">
+   527→            <div className="flex items-center gap-2">
+   528→              <div className="size-8 rounded-lg bg-primary/10 grid place-items-center">
+   529→                <Icon name="bar-chart-3" className="size-4 text-primary" />
+   530→              </div>
+   531→              <div>
+   532→                <p className="text-sm font-semibold">Channel Breakdown</p>
+   533→                <p className="text-xs text-muted-foreground">Subscribers per channel</p>
+   534→              </div>
+   535→            </div>
+   536→            <Pill color="emerald">{channelBreakdown.length} channels</Pill>
+   537→          </div>
+   538→          <ResponsiveContainer width="100%" height={200}>
+   539→            <BarChart data={channelBreakdown} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
+   540→              <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
+   541→              <XAxis dataKey="name" tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.4} tickLine={false} axisLine={false} interval={0} />
+   542→              <YAxis tick={{ fontSize: 11 }} stroke="currentColor" strokeOpacity={0.4} tickLine={false} axisLine={false} tickFormatter={(v) => formatNumber(Number(v))} />
+   543→              <Tooltip content={<ChartTooltip formatter={(v) => formatNumber(Number(v)) + " subs"} />} cursor={{ fill: "currentColor", fillOpacity: 0.05 }} />
+   544→              <Bar dataKey="subscribers" radius={[6, 6, 0, 0]} maxBarSize={56}>
+   545→                {channelBreakdown.map((c) => (
+   546→                  <Cell key={c.name} fill={CHART_HEX[c.color] ?? CHART_HEX.emerald} />
+   547→                ))}
+   548→              </Bar>
+   549→            </BarChart>
+   550→          </ResponsiveContainer>
+   551→          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-2">
+   552→            {channelBreakdown.map((c) => (
+   553→              <div key={c.name} className="flex items-center gap-1.5 text-xs">
+   554→                <span
+   555→                  className="size-2 rounded-full"
+   556→                  style={{ background: CHART_HEX[c.color] ?? CHART_HEX.emerald }}
+   557→                />
+   558→                <span className="text-muted-foreground">{c.name}</span>
+   559→              </div>
+   560→            ))}
+   561→          </div>
+   562→        </Card>
+   563→      </motion.div>
+   564→    </div>
+   565→  );
+   566→}
+   567→
+   568→// ─── Three column row (activity / tasks / goals) ─────────────────────────────
+   569→function ThreeColumnRow({
+   570→  activity,
+   571→  tasks,
+   572→  dailyGoals,
+   573→  weeklyGoals,
+   574→}: {
+   575→  activity: ActivityItem[];
+   576→  tasks: TaskItem[];
+   577→  dailyGoals: GoalItem[];
+   578→  weeklyGoals: GoalItem[];
+   579→}) {
+   580→  return (
+   581→    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+   582→      {/* Recent activity */}
+   583→      <motion.div
+   584→        initial={{ opacity: 0, y: 14 }}
+   585→        animate={{ opacity: 1, y: 0 }}
+   586→        transition={{ duration: 0.45, delay: 0.1, ease: [0.2, 0.8, 0.2, 1] }}
+   587→      >
+   588→        <Card className="border-border/60 p-5 h-full glass">
+   589→          <div className="flex items-center gap-2 mb-3">
+   590→            <div className="size-8 rounded-lg bg-primary/10 grid place-items-center">
+   591→              <Icon name="activity" className="size-4 text-primary" />
+   592→            </div>
+   593→            <div>
+   594→              <p className="text-sm font-semibold">Recent Activity</p>
+   595→              <p className="text-xs text-muted-foreground">Latest studio events</p>
+   596→            </div>
+   597→          </div>
+   598→          <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+   599→            {activity.length === 0 && (
+   600→              <p className="text-sm text-muted-foreground py-6 text-center">No recent activity.</p>
+   601→            )}
+   602→            {activity.map((a) => {
+   603→              const cfg = ACTIVITY_ICON[a.type] ?? ACTIVITY_ICON.info;
+   604→              const c = colorFor(cfg.color);
+   605→              return (
+   606→                <div key={a.id} className="flex items-start gap-3 group">
+   607→                  <div className="relative flex flex-col items-center pt-0.5">
+   608→                    <span className={cn("size-2.5 rounded-full ring-4", c.bg, c.ring)} />
+   609→                  </div>
+   610→                  <div className="min-w-0 flex-1">
+   611→                    <p className="text-sm leading-snug">{a.message}</p>
+   612→                    <p className="text-xs text-muted-foreground mt-0.5 tabular-nums">
+   613→                      {relativeTime(a.createdAt)} · {a.section}
+   614→                    </p>
+   615→                  </div>
+   616→                </div>
+   617→              );
+   618→            })}
+   619→          </div>
+   620→        </Card>
+   621→      </motion.div>
+   622→
+   623→      {/* Upcoming tasks */}
+   624→      <motion.div
+   625→        initial={{ opacity: 0, y: 14 }}
+   626→        animate={{ opacity: 1, y: 0 }}
+   627→        transition={{ duration: 0.45, delay: 0.15, ease: [0.2, 0.8, 0.2, 1] }}
+   628→      >
+   629→        <Card className="border-border/60 p-5 h-full glass">
+   630→          <div className="flex items-center gap-2 mb-3">
+   631→            <div className="size-8 rounded-lg bg-primary/10 grid place-items-center">
+   632→              <Icon name="list-checks" className="size-4 text-primary" />
+   633→            </div>
+   634→            <div>
+   635→              <p className="text-sm font-semibold">Upcoming Tasks</p>
+   636→              <p className="text-xs text-muted-foreground">Next on your plate</p>
+   637→            </div>
+   638→          </div>
+   639→          <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+   640→            {tasks.length === 0 && (
+   641→              <p className="text-sm text-muted-foreground py-6 text-center">All caught up!</p>
+   642→            )}
+   643→            {tasks.map((t) => {
+   644→              const pColor = PRIORITY_COLOR[t.priority] ?? "emerald";
+   645→              const due = t.dueDate ? new Date(t.dueDate) : null;
+   646→              const overdue = due && due.getTime() < Date.now();
+   647→              return (
+   648→                <div key={t.id} className="rounded-lg border border-border/50 p-2.5 hover:bg-accent/40 transition-colors">
+   649→                  <div className="flex items-start justify-between gap-2">
+   650→                    <p className="text-sm font-medium leading-snug line-clamp-2">{t.title}</p>
+   651→                    <Pill color={pColor}>{t.priority}</Pill>
+   652→                  </div>
+   653→                  <div className="flex items-center justify-between mt-2 mb-1.5">
+   654→                    <span className="text-xs text-muted-foreground">{t.category}</span>
+   655→                    {due && (
+   656→                      <span
+   657→                        className={cn(
+   658→                          "inline-flex items-center gap-1 text-xs tabular-nums",
+   659→                          overdue ? "text-rose-500" : "text-muted-foreground"
+   660→                        )}
+   661→                      >
+   662→                        <Icon name="clock" className="size-3" />
+   663→                        {due.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+   664→                      </span>
+   665→                    )}
+   666→                  </div>
+   667→                  {t.progress > 0 && (
+   668→                    <div className="flex items-center gap-2">
+   669→                      <Progress value={t.progress} color={pColor} />
+   670→                      <span className="text-xs text-muted-foreground tabular-nums shrink-0">{t.progress}%</span>
+   671→                    </div>
+   672→                  )}
+   673→                </div>
+   674→              );
+   675→            })}
+   676→          </div>
+   677→        </Card>
+   678→      </motion.div>
+   679→
+   680→      {/* Daily / weekly goals */}
+   681→      <motion.div
+   682→        initial={{ opacity: 0, y: 14 }}
+   683→        animate={{ opacity: 1, y: 0 }}
+   684→        transition={{ duration: 0.45, delay: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
+   685→      >
+   686→        <Card className="border-border/60 p-5 h-full glass">
+   687→          <div className="flex items-center gap-2 mb-3">
+   688→            <div className="size-8 rounded-lg bg-primary/10 grid place-items-center">
+   689→              <Icon name="target" className="size-4 text-primary" />
+   690→            </div>
+   691→            <div>
+   692→              <p className="text-sm font-semibold">Goals & Habits</p>
+   693→              <p className="text-xs text-muted-foreground">Daily & weekly progress</p>
+   694→            </div>
+   695→          </div>
+   696→          <div className="space-y-4 max-h-80 overflow-y-auto pr-1">
+   697→            <div>
+   698→              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Daily Habits</p>
+   699→              <div className="space-y-2.5">
+   700→                {dailyGoals.length === 0 && (
+   701→                  <p className="text-xs text-muted-foreground">No daily habits set.</p>
+   702→                )}
+   703→                {dailyGoals.map((g) => (
+   704→                  <GoalRow key={g.id} goal={g} />
+   705→                ))}
+   706→              </div>
+   707→            </div>
+   708→            <div>
+   709→              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Weekly Goals</p>
+   710→              <div className="space-y-2.5">
+   711→                {weeklyGoals.length === 0 && (
+   712→                  <p className="text-xs text-muted-foreground">No weekly goals set.</p>
+   713→                )}
+   714→                {weeklyGoals.map((g) => (
+   715→                  <GoalRow key={g.id} goal={g} />
+   716→                ))}
+   717→              </div>
+   718→            </div>
+   719→          </div>
+   720→        </Card>
+   721→      </motion.div>
+   722→    </div>
+   723→  );
+   724→}
+   725→
+   726→function GoalRow({ goal }: { goal: GoalItem }) {
+   727→  const pct = goal.target > 0 ? Math.min(100, Math.round((goal.current / goal.target) * 100)) : 0;
+   728→  const c = colorFor(goal.color);
+   729→  const size = 42;
+   730→  const stroke = 4;
+   731→  const r = (size - stroke) / 2;
+   732→  const circ = 2 * Math.PI * r;
+   733→  const offset = circ - (pct / 100) * circ;
+   734→  const done = pct >= 100;
+   735→  return (
+   736→    <div className="flex items-center gap-3">
+   737→      <div className="relative shrink-0" style={{ width: size, height: size }}>
+   738→        <svg width={size} height={size} className="-rotate-90">
+   739→          <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke} className="stroke-muted" />
+   740→          <motion.circle
+   741→            cx={size / 2}
+   742→            cy={size / 2}
+   743→            r={r}
+   744→            fill="none"
+   745→            strokeWidth={stroke}
+   746→            stroke={CHART_HEX[goal.color] ?? CHART_HEX.emerald}
+   747→            strokeDasharray={circ}
+   748→            strokeLinecap="round"
+   749→            initial={{ strokeDashoffset: circ }}
+   750→            animate={{ strokeDashoffset: offset }}
+   751→            transition={{ duration: 0.8, ease: "easeOut" }}
+   752→          />
+   753→        </svg>
+   754→        <div className="absolute inset-0 grid place-items-center">
+   755→          {done ? (
+   756→            <Icon name="check" className="size-4" style={{ color: CHART_HEX[goal.color] }} />
+   757→          ) : (
+   758→            <span className="text-[10px] font-semibold tabular-nums">{pct}%</span>
+   759→          )}
+   760→        </div>
+   761→      </div>
+   762→      <div className="min-w-0 flex-1">
+   763→        <p className="text-sm font-medium truncate">{goal.title}</p>
+   764→        <p className="text-xs text-muted-foreground tabular-nums">
+   765→          <span className={c.text}>{formatNumber(goal.current)}</span> / {formatNumber(goal.target)} {goal.unit}
+   766→        </p>
+   767→      </div>
+   768→    </div>
+   769→  );
+   770→}
+   771→
+   772→// ─── Content calendar preview ────────────────────────────────────────────────
+   773→function CalendarPreview({ scheduledDates }: { scheduledDates: string[] }) {
+   774→  const { weeks, monthLabel, todayStr } = useMemo(() => {
+   775→    const now = new Date();
+   776→    const y = now.getFullYear();
+   777→    const m = now.getMonth();
+   778→    const firstDay = new Date(y, m, 1).getDay(); // 0 = Sun
+   779→    const daysInMonth = new Date(y, m + 1, 0).getDate();
+   780→    const todayStr = `${y}-${String(m + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+   781→    const cells: (number | null)[] = [];
+   782→    for (let i = 0; i < firstDay; i++) cells.push(null);
+   783→    for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+   784→    while (cells.length % 7 !== 0) cells.push(null);
+   785→    const weeks: (number | null)[][] = [];
+   786→    for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+   787→    const monthLabel = now.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+   788→    return { weeks, monthLabel, todayStr };
+   789→  }, []);
+   790→
+   791→  const dateSet = useMemo(() => new Set(scheduledDates), [scheduledDates]);
+   792→
+   793→  const dayKey = (day: number) => {
+   794→    const now = new Date();
+   795→    const y = now.getFullYear();
+   796→    const m = now.getMonth();
+   797→    return `${y}-${String(m + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+   798→  };
+   799→
+   800→  const weekdayLabels = ["S", "M", "T", "W", "T", "F", "S"];
+   801→  const scheduledThisMonth = weeks
+   802→    .flat()
+   803→    .filter((d): d is number => d !== null)
+   804→    .filter((d) => dateSet.has(dayKey(d))).length;
+   805→
+   806→  return (
+   807→    <motion.div
+   808→      initial={{ opacity: 0, y: 14 }}
+   809→      animate={{ opacity: 1, y: 0 }}
+   810→      transition={{ duration: 0.45, delay: 0.1, ease: [0.2, 0.8, 0.2, 1] }}
+   811→    >
+   812→      <Card className="border-border/60 p-5 glass">
+   813→        <div className="flex items-center justify-between mb-4">
+   814→          <div className="flex items-center gap-2">
+   815→            <div className="size-8 rounded-lg bg-primary/10 grid place-items-center">
+   816→              <Icon name="calendar-days" className="size-4 text-primary" />
+   817→            </div>
+   818→            <div>
+   819→              <p className="text-sm font-semibold">{monthLabel}</p>
+   820→              <p className="text-xs text-muted-foreground">{scheduledThisMonth} scheduled items</p>
+   821→            </div>
+   822→          </div>
+   823→          <Pill color="teal" icon="clock">
+   824→            This month
+   825→          </Pill>
+   826→        </div>
+   827→
+   828→        <div className="grid grid-cols-7 gap-1.5 text-center">
+   829→          {weekdayLabels.map((w, i) => (
+   830→            <div key={i} className="text-[11px] font-semibold text-muted-foreground py-1">
+   831→              {w}
+   832→            </div>
+   833→          ))}
+   834→          {weeks.flat().map((day, i) => {
+   835→            if (day === null) {
+   836→              return <div key={i} className="aspect-square" />;
+   837→            }
+   838→            const key = dayKey(day);
+   839→            const isToday = key === todayStr;
+   840→            const hasScheduled = dateSet.has(key);
+   841→            return (
+   842→              <div
+   843→                key={i}
+   844→                className={cn(
+   845→                  "relative aspect-square rounded-lg flex flex-col items-center justify-center text-sm transition-colors",
+   846→                  isToday
+   847→                    ? "bg-primary text-primary-foreground font-semibold"
+   848→                    : hasScheduled
+   849→                    ? "bg-accent/60 hover:bg-accent"
+   850→                    : "hover:bg-accent/40"
+   851→                )}
+   852→              >
+   853→                <span className="tabular-nums">{day}</span>
+   854→                {hasScheduled && (
+   855→                  <span
+   856→                    className={cn(
+   857→                      "absolute bottom-1 size-1.5 rounded-full",
+   858→                      isToday ? "bg-primary-foreground" : "bg-emerald-500"
+   859→                    )}
+   860→                  />
+   861→                )}
+   862→              </div>
+   863→            );
+   864→          })}
+   865→        </div>
+   866→      </Card>
+   867→    </motion.div>
+   868→  );
+   869→}
+   870→
+   871→// ─── Top performing videos ───────────────────────────────────────────────────
+   872→function TopVideos({ topVideos }: { topVideos: TopVideo[] }) {
+   873→  return (
+   874→    <motion.div
+   875→      initial={{ opacity: 0, y: 14 }}
+   876→      animate={{ opacity: 1, y: 0 }}
+   877→      transition={{ duration: 0.45, delay: 0.1, ease: [0.2, 0.8, 0.2, 1] }}
+   878→    >
+   879→      <Card className="border-border/60 p-5 glass">
+   880→        <div className="flex items-center justify-between mb-4">
+   881→          <div className="flex items-center gap-2">
+   882→            <div className="size-8 rounded-lg bg-primary/10 grid place-items-center">
+   883→              <Icon name="trophy" className="size-4 text-primary" />
+   884→            </div>
+   885→            <div>
+   886→              <p className="text-sm font-semibold">Top Performing Videos</p>
+   887→              <p className="text-xs text-muted-foreground">Best by views across all channels</p>
+   888→            </div>
+   889→          </div>
+   890→          <Pill color="amber" icon="star">
+   891→            Top {topVideos.length}
+   892→          </Pill>
+   893→        </div>
+   894→
+   895→        {topVideos.length === 0 ? (
+   896→          <p className="text-sm text-muted-foreground py-8 text-center">No video performance data yet.</p>
+   897→        ) : (
+   898→          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+   899→            {topVideos.map((v, i) => {
+   900→              const c = colorFor(v.channelColor);
+   901→              return (
+   902→                <motion.div
+   903→                  key={v.id}
+   904→                  initial={{ opacity: 0, y: 10 }}
+   905→                  animate={{ opacity: 1, y: 0 }}
+   906→                  transition={{ duration: 0.4, delay: 0.15 + i * 0.05 }}
+   907→                  className="lift"
+   908→                >
+   909→                  <div className="rounded-xl border border-border/60 p-3.5 h-full flex flex-col gap-2 bg-card/40">
+   910→                    <div className="flex items-start justify-between gap-2">
+   911→                      <div className={cn("size-7 rounded-lg grid place-items-center text-xs font-bold shrink-0", c.soft)}>
+   912→                        {i + 1}
+   913→                      </div>
+   914→                      <span className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded-full", c.soft)}>
+   915→                        {v.channelName}
+   916→                      </span>
+   917→                    </div>
+   918→                    <p className="text-sm font-medium leading-snug line-clamp-2 min-h-[2.5rem]">
+   919→                      {v.title}
+   920→                    </p>
+   921→                    <div className="mt-auto grid grid-cols-3 gap-1 pt-1">
+   922→                      <Metric label="Views" value={formatNumber(v.views)} icon="eye" color="teal" />
+   923→                      <Metric label="Rev" value={formatCompactMoney(v.revenue)} icon="dollar" color="emerald" />
+   924→                      <Metric label="CTR" value={`${v.ctr.toFixed(1)}%`} icon="trending-up" color="amber" />
+   925→                    </div>
+   926→                  </div>
+   927→                </motion.div>
+   928→              );
+   929→            })}
+   930→          </div>
+   931→        )}
+   932→      </Card>
+   933→    </motion.div>
+   934→  );
+   935→}
+   936→
+   937→function Metric({
+   938→  label,
+   939→  value,
+   940→  icon,
+   941→  color,
+   942→}: {
+   943→  label: string;
+   944→  value: string;
+   945→  icon: string;
+   946→  color: string;
+   947→}) {
+   948→  const c = colorFor(color);
+   949→  return (
+   950→    <div className="text-center rounded-md bg-muted/40 py-1.5 px-1">
+   951→      <Icon name={icon} className={cn("size-3 mx-auto mb-0.5", c.text)} />
+   952→      <p className="text-xs font-semibold tabular-nums leading-none">{value}</p>
+   953→      <p className="text-[9px] text-muted-foreground mt-0.5 uppercase tracking-wide">{label}</p>
+   954→    </div>
+   955→  );
+   956→}
+   957→
+   958→// ─── Chart helpers ────────────────────────────────────────────────────────────
+   959→function ChartCard({
+   960→  title,
+   961→  subtitle,
+   962→  icon,
+   963→  children,
+   964→  delay = 0,
+   965→}: {
+   966→  title: string;
+   967→  subtitle: string;
+   968→  icon: string;
+   969→  children: React.ReactNode;
+   970→  delay?: number;
+   971→}) {
+   972→  return (
+   973→    <motion.div
+   974→      initial={{ opacity: 0, y: 14 }}
+   975→      animate={{ opacity: 1, y: 0 }}
+   976→      transition={{ duration: 0.45, delay, ease: [0.2, 0.8, 0.2, 1] }}
+   977→    >
+   978→      <Card className="relative overflow-hidden border-border/60 p-5 h-full glass">
+   979→        <div className="flex items-center justify-between mb-3">
+   980→          <div className="flex items-center gap-2">
+   981→            <div className="size-8 rounded-lg bg-primary/10 grid place-items-center">
+   982→              <Icon name={icon} className="size-4 text-primary" />
+   983→            </div>
+   984→            <div>
+   985→              <p className="text-sm font-semibold">{title}</p>
+   986→              <p className="text-xs text-muted-foreground">{subtitle}</p>
+   987→            </div>
+   988→          </div>
+   989→        </div>
+   990→        {children}
+   991→      </Card>
+   992→    </motion.div>
+   993→  );
+   994→}
+   995→
+   996→function ChartLegend({ items }: { items: { label: string; color: string }[] }) {
+   997→  return (
+   998→    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3">
+   999→      {items.map((it) => {
+  1000→        const c = colorFor(it.color);
+  1001→        return (
+  1002→          <div key={it.label} className="flex items-center gap-1.5 text-xs">
+  1003→            <span className={cn("size-2 rounded-full", c.bg)} />
+  1004→            <span className="text-muted-foreground">{it.label}</span>
+  1005→          </div>
+  1006→        );
+  1007→      })}
+  1008→    </div>
+  1009→  );
+  1010→}
+  1011→
+  1012→interface ChartTooltipProps {
+  1013→  active?: boolean;
+  1014→  payload?: { name?: string; value?: number | string; color?: string; dataKey?: string }[];
+  1015→  label?: string;
+  1016→  formatter?: (v: number | string | undefined) => string;
+  1017→}
+  1018→
+  1019→function ChartTooltip({ active, payload, label, formatter }: ChartTooltipProps) {
+  1020→  if (!active || !payload || payload.length === 0) return null;
+  1021→  return (
+  1022→    <div className="rounded-lg border border-border/60 bg-popover/95 backdrop-blur-md px-3 py-2 shadow-lg">
+  1023→      {label && <p className="text-xs font-semibold mb-1">{label}</p>}
+  1024→      <div className="space-y-0.5">
+  1025→        {payload.map((p, i) => (
+  1026→          <div key={i} className="flex items-center gap-2 text-xs">
+  1027→            <span className="size-2 rounded-full" style={{ background: p.color }} />
+  1028→            <span className="text-muted-foreground capitalize">{p.name ?? p.dataKey}:</span>
+  1029→            <span className="font-semibold tabular-nums">{formatter ? formatter(p.value) : String(p.value)}</span>
+  1030→          </div>
+  1031→        ))}
+  1032→      </div>
+  1033→    </div>
+  1034→  );
+  1035→}
+  1036→
+  1037→// ─── Loading skeleton ─────────────────────────────────────────────────────────
+  1038→function DashboardSkeleton() {
+  1039→  return (
+  1040→    <div className="space-y-5">
+  1041→      {/* hero skeleton */}
+  1042→      <div className="shimmer rounded-2xl h-40 border border-border/60 bg-card/40" />
+  1043→      {/* stat grid skeleton */}
+  1044→      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+  1045→        {Array.from({ length: 8 }).map((_, i) => (
+  1046→          <div key={i} className="shimmer rounded-xl h-28 border border-border/60 bg-card/40" />
+  1047→        ))}
+  1048→      </div>
+  1049→      {/* charts row skeleton */}
+  1050→      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+  1051→        <div className="shimmer rounded-2xl h-72 border border-border/60 bg-card/40" />
+  1052→        <div className="shimmer rounded-2xl h-72 border border-border/60 bg-card/40" />
+  1053→      </div>
+  1054→      {/* health + breakdown skeleton */}
+  1055→      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+  1056→        <div className="shimmer rounded-2xl h-72 border border-border/60 bg-card/40" />
+  1057→        <div className="shimmer rounded-2xl h-72 lg:col-span-2 border border-border/60 bg-card/40" />
+  1058→      </div>
+  1059→      {/* three column skeleton */}
+  1060→      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+  1061→        {Array.from({ length: 3 }).map((_, i) => (
+  1062→          <div key={i} className="shimmer rounded-2xl h-80 border border-border/60 bg-card/40" />
+  1063→        ))}
+  1064→      </div>
+  1065→      {/* calendar skeleton */}
+  1066→      <div className="shimmer rounded-2xl h-64 border border-border/60 bg-card/40" />
+  1067→      {/* top videos skeleton */}
+  1068→      <div className="shimmer rounded-2xl h-48 border border-border/60 bg-card/40" />
+  1069→    </div>
+  1070→  );
+  1071→}
+  1072→

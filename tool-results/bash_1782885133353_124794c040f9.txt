@@ -1,0 +1,300 @@
+# Worklog — My YT Automation Studio
+
+This file is the shared worklog for all agents working on the YT Automation Studio.
+Each agent MUST read this before starting and append a new section (starting with `---`) after finishing.
+
+---
+Task ID: 1-6
+Agent: Main (orchestrator)
+Task: Build the foundation — database, design system, app shell, navigation, command palette.
+
+Work Log:
+- Defined comprehensive Prisma schema (15 models: Channel, Video, Card, Task, TeamMember, TrendItem, FileAsset, Transaction, Goal, Workflow, Note, Habit, ReadingItem, Bookmark, Activity, ChatMessage) using SQLite.
+- Ran `bun run db:push` to sync schema.
+- Wrote `prisma/seed.ts` with realistic sample data (4 channels, 24 videos, 10 planner cards, 8 tasks, 5 team members, 6 trends, 8 files, ~25 transactions, 6 goals, 4 workflows, notes/habits/reading/bookmarks/activities) and ran it.
+- Built premium design system in `src/app/globals.css`: emerald/amber/rose/teal/orange palette (NO blue/indigo), glassmorphism utilities (`.glass`, `.glass-strong`), gradient text, animated aurora background, shimmer, lift hover, custom scrollbars, focus-mode dim.
+- Root `src/app/layout.tsx` with Geist fonts, ThemeProvider (next-themes, default dark), Toaster + Sonner.
+- Zustand store `src/lib/store.ts` (section navigation, command palette, sidebar, focus mode, quick add).
+- Shared types `src/lib/types.ts`, nav config `src/lib/nav.ts` (6 groups, 16 sections).
+- Helpers `src/lib/api.ts` (api fetch, formatNumber/Money/Date, relativeTime, colorClasses map).
+- `src/components/icon.tsx` dynamic Lucide icon registry (~70 icons).
+- Floating glass sidebar `src/components/layout/sidebar.tsx` with animated active pill (layoutId), grouped nav, status card, theme toggle, mobile drawer.
+- Topbar `src/components/layout/topbar.tsx` with global search trigger (opens ⌘K), focus mode, notifications, theme toggle, profile.
+- Command palette `src/components/layout/command-palette.tsx` (⌘K) with debounced global search via `/api/search`, navigation, actions.
+- `/api/search` route searching channels/videos/tasks/trends.
+- Shared UI primitives `src/components/shared/ui.tsx`: PageTransition, SectionHeader, StatCard (animated, gradient blur), EmptyState, Pill, Progress.
+- SectionErrorBoundary `src/components/section-error-boundary.tsx`.
+- Main `src/app/page.tsx`: aurora bg, sidebar+topbar, AnimatePresence section switching, sticky footer with keyboard hints.
+- Created stub files for all 16 sections so the app compiles (`src/components/sections/*.tsx`).
+
+Stage Summary:
+- Foundation is complete and the dev server compiles cleanly (`GET / 200`).
+- Design language: dark-first premium dashboard, emerald primary, glassmorphism, rounded-2xl cards, framer-motion transitions.
+- All 16 sections are currently STUBS. They need real implementations.
+- Each section is an independent file `src/components/sections/{name}.tsx` exporting a named component (see page.tsx imports for exact names).
+- Available shared helpers subagents MUST reuse:
+  - `import { SectionHeader, StatCard, EmptyState, Pill, Progress, PageTransition } from "@/components/shared/ui"`
+  - `import { Icon } from "@/components/icon"` (name-based lucide icon)
+  - `import { api, formatNumber, formatMoney, formatCompactMoney, formatDate, relativeTime, colorFor, colorClasses } from "@/lib/api"`
+  - `import { db } from "@/lib/db"` (server side only)
+  - shadcn/ui components in `@/components/ui/*`
+  - recharts for charts, framer-motion for animation, @dnd-kit for drag-drop
+- Database is seeded with rich sample data. API routes should live in `src/app/api/{resource}/route.ts`.
+- The single visible route is `/` (src/app/page.tsx). Do NOT create other page routes — only API routes + section components.
+
+---
+Task ID: 7-a
+Agent: Dashboard Section Builder
+Task: Build the HOME DASHBOARD section (`DashboardSection`) + aggregation API at `/api/dashboard`.
+
+Work Log:
+- Read foundation: design system (globals.css), shared UI primitives (StatCard/SectionHeader/Pill/Progress), icon registry, Prisma schema (15 models), seed data (4 channels, 24 videos, 10 cards, 8 tasks, 6 goals, ~25 transactions, 8 activities), api.ts helpers (formatNumber/Money/CompactMoney, relativeTime, colorFor).
+- Created `src/app/api/dashboard/route.ts` (GET) — single aggregation endpoint returning all dashboard data in one call:
+  - `totals`: totalChannels, totalVideosPublished (publishDate in past), videosScheduled (cards in "scheduled" stage), monthlyRevenue (income txns in current month), estimatedRPM (revenue-weighted avg of channel.rpm), totalSubscribers/totalViews/watchTimeHours (channel sums), monetizedChannels.
+  - `channelHealth`: average of channel.healthScore.
+  - `revenueSeries`: last 6 months [{month, income, expense, profit}] computed via `new Date(year, month - i, 1)` iteration.
+  - `viewsSeries`: last 6 months [{month, views}] synthesized from total video views with growth weights.
+  - `subscriberGrowth`: last 6 months cumulative [{month, subs}] ending at current total.
+  - `recentActivity`: latest 8 Activity rows.
+  - `upcomingTasks`: tasks where status != "done", sorted by dueDate asc, limit 6.
+  - `dailyGoals` / `weeklyGoals`: goals where type in ("daily_habit","upload") mapped to {title,current,target,unit,color}.
+  - `channelBreakdown`: per-channel {name,color,subscribers,revenue,views}.
+  - `topVideos`: top 5 by views with channel name+color.
+  - `scheduledDates`: ISO date strings from cards+tasks with dueDate (for calendar dots).
+  - All queries run in a single `Promise.all` for performance; Date objects serialized to ISO strings.
+- Created `src/components/sections/dashboard.tsx` (named export `DashboardSection`, "use client"). Layout:
+  1. **Greeting hero** — glass card with emerald/teal/amber gradient blurs, time-based greeting + gradient "Creator", current date, rotating daily motivation quote (8-item array, indexed by day-of-year), "Open AI Assistant" CTA button, monetized-channels-live pulse, and a decorative mini sparkline area chart.
+  2. **Stat grid** — 8 StatCards in `grid-cols-2 md:grid-cols-4` with color variety (emerald/teal/amber/emerald/orange/rose/teal/amber), plausible deltas (+0 to +18%), and contextual hints. Uses the shared StatCard with staggered delay.
+  3. **Charts row** — 2 glass cards on lg: Revenue Overview (AreaChart with income/profit/expense areas + gradient fills via `<defs>`, emerald/amber/rose palette) and Subscriber Growth (AreaChart, teal gradient). Custom glass ChartTooltip with backdrop-blur, ChartLegend, subtle gridlines (strokeOpacity 0.08), tabular-nums axis formatting.
+  4. **Channel health + breakdown** — 1+2 grid: donut gauge (PieChart with single-value Pie, innerRadius 62, center label showing score + "out of 100", color shifts emerald/amber/rose by threshold, status Pill) and channel breakdown BarChart (per-Cell colored bars by channel.color, rounded radius, legend dots).
+  5. **Three-column row** — Recent Activity (timeline list with colored ring dots by type: success=emerald check, info=teal, warning/error=amber/rose, relative timestamps, max-h-80 scroll), Upcoming Tasks (priority pills, due dates with overdue highlight in rose, Progress bars colored by priority, category labels), Goals & Habits (daily_habit + upload goals with animated SVG circular progress rings, completion check icon, current/target with unit, scrollable).
+  6. **Content calendar preview** — mini month grid for current month, weekday headers, today highlighted with primary bg, scheduled days marked with emerald dot (or primary-foreground dot on today), scheduled-count Pill. Computed via useMemo from current date.
+  7. **Top performing videos** — responsive grid (1/2/5 cols) of top-5 video cards with rank badge, channel pill (channel.color), 2-line title, and 3 mini metrics (Views/Rev/CTR) per card with colored icons. Lift hover.
+- Loading state: `DashboardSkeleton` with `.shimmer` placeholder blocks matching each section's layout.
+- Error handling: `toast.error` on fetch failure via sonner.
+- Animations: framer-motion staggered entrance (opacity+y, delay by index/section), motion.circle for goal ring stroke animation.
+- Polish: all cards use `glass` + `border-border/60`, `tabular-nums` on all numbers, mobile-first responsive (stack → grid), accessible semantic structure, custom scrollbar via max-h-80 overflow.
+- Verified: `bun run lint` passes with zero errors. Dev server returns `GET /api/dashboard 200` (16ms) and `GET / 200` cleanly. All Prisma queries execute correctly (confirmed via dev.log query traces).
+- Did NOT edit any shared/foundation files (globals.css, page.tsx, layout.tsx, store.ts, api.ts, types.ts, nav.ts, icon.tsx, ui.tsx, sidebar/topbar/command-palette). Only created the 2 required files.
+
+Stage Summary:
+- Home Dashboard section is complete and production-ready.
+- The `/api/dashboard` endpoint serves the entire overview in a single ~480ms call (cold) / ~16ms (warm).
+- `DashboardSection` is a visually rich, dark-first, glassmorphic landing overview with 7 distinct content blocks, all using the emerald/amber/rose/teal/orange palette (no blue/indigo).
+- Reuses all shared helpers (StatCard, SectionHeader, Pill, Progress, Icon, api helpers, Card, Button) and recharts for all charts.
+- Ready for orchestrator to wire into the section switcher (already imported as `DashboardSection` in page.tsx).
+
+---
+Task ID: 7-b
+Agent: Channels Section Builder
+Task: Build the CHANNEL MANAGEMENT section (UI + CRUD API) for the YT Automation Studio.
+
+Work Log:
+- Read existing worklog, types, api.ts, shared/ui.tsx, schema.prisma, seed.ts, dialog/alert-dialog/select/switch/button/card primitives, and dev.log to confirm conventions.
+- Created `src/app/api/channels/route.ts`:
+  - `GET` → `db.channel.findMany({ orderBy: { createdAt: "desc" } })`, wrapped in `{ channels }`. Try/catch with 500 fallback.
+  - `POST` → validates `name` (400 if missing). Coerces strings/numbers/booleans. Validates `status` (active|paused|growth|new) and `color` (emerald|amber|rose|teal|orange). Defaults: status="active", color="emerald", healthScore=80, language="English", country="United States", socialLinks="{}". Clamps subscribers/views/healthScore to safe ranges. Returns 201 with created channel.
+- Created `src/app/api/channels/[id]/route.ts`:
+  - `GET` → findUnique or 404.
+  - `PATCH` → only updates fields actually present in body. Re-validates status/color enums, falls back to existing value if invalid. Empty name → 400. Returns updated channel.
+  - `DELETE` → findUnique check then delete. Returns `{ ok: true }` or 404.
+  - Uses Next 16 async `params: Promise<{ id: string }>` signature.
+- Built `src/components/sections/channels.tsx` (named export `ChannelsSection`, `"use client"`):
+  - `SectionHeader` (icon "youtube") with "New Channel" button.
+  - Summary strip: 4 `StatCard`s (Total Channels, Monetized, Total Subscribers sum, Total Revenue sum) with emerald/amber/teal/rose variety and staggered delays.
+  - Channel cards grid (`grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4`): each card has a colored gradient banner strip, rounded-2xl logo avatar (first letter gradient or image), name + niche, status pill (color by status: active=emerald, growth=amber, paused=rose, new=teal), 2x3 metric grid (Subs, Views, Watch hrs, Revenue, RPM, Health), animated `Progress` bar for health score (color: >=80 emerald, >=60 amber, else rose), monetization Pill, edit + delete icon buttons, hover-lift (`whileHover={{ y: -4 }}`).
+  - Loading state: shimmer skeleton cards (6) using `.shimmer` utility class.
+  - Empty state: `EmptyState` with action button.
+  - Create/Edit Dialog (scrollable `max-h-[85vh] overflow-y-auto`, `sm:max-w-2xl`) with 4 grouped sections separated by `Separator`:
+    - Basic Info: name (required), niche, language, country, status (Select), color (Select), monetized (Switch).
+    - Metrics: subscribers, views, watchHours, revenue, rpm, healthScore (number inputs).
+    - Branding: logoUrl, bannerUrl, description (Textarea), keywords, socialLinks, adsenseAccount.
+    - Notes & Goals: notes (Textarea), goals (Textarea).
+  - Submit: POST (create) or PATCH (edit) → `load()` → toast.success → close dialog. Saving state with spinner.
+  - Delete: AlertDialog confirmation → DELETE → refresh → toast. Deleting state with spinner.
+  - All state: `channels`, `loading`, `dialogOpen`, `editing`, `form`, `saving`, `deleteTarget`, `deleting`. `load()` runs on mount via `useEffect`.
+- Fixed a pre-existing foundation bug: `src/components/shared/ui.tsx` imports `colorFor` from `@/lib/utils`, but `@/lib/utils` only exported `cn`. Added a single additive re-export (`export { colorFor } from "@/lib/api";`) to `src/lib/utils.ts`. This file is NOT in the "do not edit" list (only api.ts, types.ts, etc. are), so this is a safe fix that unblocks every section that consumes shared UI primitives. No circular import (api.ts does not import from utils).
+- Verified via curl: GET 200, POST 201 (and 400 on missing name), PATCH 200, single GET 200 (and 404 on unknown id), DELETE 200. Dev log shows clean compiles.
+- `bun run lint` passes with zero errors/warnings.
+
+Stage Summary:
+- Channels section is fully functional end-to-end: list, create, edit, delete with optimistic refresh + toasts.
+- API routes follow Next 16 conventions (NextRequest/NextResponse, async `params`), use `db` from `@/lib/db`, validate inputs, return proper status codes.
+- UI is dark-first premium: glassmorphism via `.lift`/Card, emerald/amber/rose/teal/orange palette (no blue/indigo), framer-motion stagger + hover-lift, gradient banners per channel color, responsive grid.
+- Foundation bug in `lib/utils.ts` (missing `colorFor` re-export) fixed — every section that uses shared UI primitives (StatCard/Pill/Progress) can now compile and render.
+- Files created/modified by this agent:
+  - `src/app/api/channels/route.ts` (new)
+  - `src/app/api/channels/[id]/route.ts` (new)
+  - `src/components/sections/channels.tsx` (overwrote stub)
+  - `src/lib/utils.ts` (additive one-line re-export to fix foundation bug)
+
+---
+Task ID: 7-d
+Agent: Videos Section Builder
+Task: Build the VIDEO DATABASE section (`src/components/sections/videos.tsx`) + REST API for videos (`src/app/api/videos/route.ts`, `src/app/api/videos/[id]/route.ts`).
+
+Work Log:
+- Read foundation worklog and inspected shared primitives (`SectionHeader`, `StatCard`, `EmptyState`, `Pill`, `Progress`), `Icon` registry, `api` helpers, `db` client, Prisma `Video`/`Channel` schema, existing `/api/channels` route conventions, and seeded sample data (4 channels × 6 videos = 24 videos, with channel colors emerald/amber/rose/teal).
+- Created `src/app/api/videos/route.ts`:
+  - `GET` — supports `?channelId=`, `?status=` (editingStatus), `?q=` (title contains). Includes `channel`. Orders by `publishDate desc` (nulls last naturally via SQLite ordering) then `createdAt desc`.
+  - `POST` — validates `title` and `channelId` (required), verifies channel exists, coerces strings/numbers safely, clamps `seoScore` 0–100 and floors non-negative metrics, parses `publishDate` (null|ISO). Returns created video with channel, status 201.
+- Created `src/app/api/videos/[id]/route.ts` (Next.js 16 `params: Promise<{id}>` async signature):
+  - `GET` — single video + channel, 404 if missing.
+  - `PATCH` — only touches provided fields; validates `title` non-empty, `channelId` exists, edits `editingStatus`/`publishDate`/numbers/strings selectively. Returns updated video.
+  - `DELETE` — 404 if missing, otherwise deletes and returns `{ok:true}`.
+- Created `src/components/sections/videos.tsx` (`VideosSection` named export, `"use client"`):
+  - `SectionHeader` with title "Video Database", description, `film` icon, "New Video" button.
+  - Summary strip: 4 `StatCard`s — Total Videos (emerald/film), Published (teal/check-circle), Avg SEO Score (amber/gauge), Total Revenue (rose/dollar). All staggered with framer-motion.
+  - Glass filter bar with search Input (icon), channel `Select` (with colored dots), status `Select`, custom Table/Grid view toggle, conditional "Clear" button.
+  - Debounced fetch (280ms) on `q` changes, immediate on channel/status. Loads channels once on mount via `/api/channels`.
+  - Table view (default): premium `Table` inside `ScrollArea` (max-h-68vh). Columns: Title (film icon + truncate, shows channel name on xs), Channel (dot + name, `hidden sm:table-cell`), Status (Pill or muted badge), SEO Score (`Progress` + colored number, `hidden md:table-cell`), Views (tabular, `hidden md:table-cell`), Revenue (money, `hidden lg:table-cell`), Publish Date (`hidden lg:table-cell`), trailing dropdown (Edit / Delete). Row click opens edit dialog; dropdown click stops propagation. Per-row motion fade-in.
+  - Grid view: responsive `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3` cards. Each card: gradient thumbnail (by channel color) with film icon, channel pill (top-left) + status pill (top-right), title (2-line clamp), SEO progress + score, Views/Revenue mini-tiles, publish date footer with hover chevron. Staggered motion entrance.
+  - Create/Edit Dialog: max-w-3xl, scrollable (max-h-[55vh] ScrollArea) with 5 tabs:
+    - Details: title (req), channel (req), editingStatus, description, publishDate (date input), videoUrl.
+    - SEO: keywords, tags, seoScore (number + live `Progress` + Strong/Okay/Weak label colored emerald/amber/rose), hook, cta.
+    - Content: script (Textarea, `min-h-40`, mono), notes.
+    - Assets: thumbnailUrl, voiceOverUrl + info note.
+    - Performance: views/ctr/retention/watchTime/revenue inputs + live mini-metric tiles.
+  - Submit handler: validates required fields, POST (create) or PATCH (edit) with proper payload, toasts success/error, closes dialog, reloads list. Saving state shows spinner on button.
+  - Empty state: distinct copy for filtered-empty vs no-videos-at-all, with matching action buttons.
+  - Skeleton body with 8 shimmer rows during initial load.
+  - Palette: emerald/amber/rose/teal only (no blue/indigo). Dark-first, glassmorphism (`glass` class on filter bar + cards).
+  - No shared files edited; only created the 3 specified files.
+- Verified with curl: GET `/api/videos` returns 24 videos with channel; `?channelId=&status=&q=` filters work; POST → 201; PATCH updates fields; GET single → 200; DELETE → 200 `{ok:true}`; subsequent GET → 404. Lint passes clean (`bun run lint` exit 0). Dev server compiles cleanly with no errors in `dev.log`.
+
+Stage Summary:
+- Video Database section is fully functional with both a premium Stripe/Linear-style table view and a polished grid view, comprehensive create/edit dialog with tabbed form, search + filter + view-toggle, summary stats, and full CRUD against `/api/videos`.
+- 3 new files created: `src/components/sections/videos.tsx`, `src/app/api/videos/route.ts`, `src/app/api/videos/[id]/route.ts`.
+- No changes to shared primitives, layout, or other sections.
+- Palette stays within emerald/amber/rose/teal. Dark-first glassmorphism consistent with the design system.
+
+---
+Task ID: 7-c
+Agent: Content Planner (Kanban)
+
+Task: Build the Content Planner section — a premium drag-and-drop Kanban board (Linear/Notion style) covering the full video production pipeline (10 stages), with create/edit dialog and reorder API.
+
+Work Log:
+- Read the foundation worklog (Task 1-6) and confirmed available shared helpers (`SectionHeader`, `EmptyState`, `Icon`, `api`, `formatDate`, `db`, shadcn/ui set, `@dnd-kit/core` + `@dnd-kit/sortable` + `@dnd-kit/utilities`, framer-motion, sonner).
+- Verified the `Card` Prisma model (id, channelId?, title, description, stage, priority, position, dueDate?, tags, assignee, timestamps) and the seeded 10 cards (one per stage).
+- Created `src/app/api/cards/route.ts`:
+  - `GET` → all cards with `channel` relation, ordered by stage then position.
+  - `POST` → create card; `position` defaults to `count` of cards in the given stage (default stage "ideas").
+- Created `src/app/api/cards/[id]/route.ts` (Next 16 — `params` is awaited Promise):
+  - `PATCH` → updates any provided fields. When `stage` changes (and no explicit `position` supplied), sets `position = count` in the new stage. Coerces all inputs to safe strings/null. Returns updated card with channel.
+  - `DELETE` → deletes the card (404 if missing).
+- Created `src/app/api/cards/reorder/route.ts`:
+  - `POST { cardId, newStage, newIndex }`. Loads all cards in `newStage` excluding the moved card, inserts the moved card at `Math.clamp(newIndex, 0, len)`, updates the moved card's stage if changed, then reassigns positions 0..n sequentially via parallel `db.card.update` calls. Returns the full refreshed board so the client can sync. If `cardId` is missing, returns the current board gracefully (200) instead of erroring.
+- Created `src/components/sections/planner.tsx` (named export `PlannerSection`, `"use client"`):
+  - `STAGES` config map for all 10 stages with label/color/icon. Colors: ideas=teal, research=emerald, script=amber, voiceover=orange, editing=rose, thumbnail=amber, ready=emerald, scheduled=teal, published=emerald, archive=muted. Local `STAGE_COLORS` map (mirrors shared `colorFor` plus a `muted` entry, since `colorFor` doesn't include `muted` and shared files can't be edited).
+  - Icons: lightbulb, search, file-text, message, film, image, check-circle, calendar-days, youtube — all present in the shared icon registry. NOTE: the spec asked for `archive` icon for the archive stage, but `archive` is not in the shared `src/components/icon.tsx` registry and shared files are off-limits, so I used `file-box` (closest available semantic substitute). If a future agent adds `archive` to the registry, switching the config is a one-line change.
+  - `SectionHeader` with title "Content Planner", description "Drag ideas through your production pipeline", icon "kanban-square", and a "New Idea" action button.
+  - `DndContext` with `closestCorners` collision detection and `PointerSensor({ activationConstraint: { distance: 5 } })` so clicks still work.
+  - 10 `Column` components in a horizontally scrollable flex row (each `min-w-[280px]`). Each column has a 3px colored top border, header (icon + label + count `Badge` with `Tooltip`), and a `useDroppable` body (min-h 140px) so empty columns accept drops. Empty state shows a dashed "Drop here" placeholder.
+  - `SortableContext` per column with `verticalListSortingStrategy`. Each card uses `useSortable({ id, data: { stage } })`, spreads listeners/attributes on a `motion.div` with `whileHover={{ scale: 1.015 }}`, `cursor-grab`/`active:cursor-grabbing`, `touch-none`, opacity 0.35 while dragging. Click (no drag) opens edit dialog.
+  - `CardPreview` renders title, priority pill (high=rose, medium=amber, low=teal), channel badge, due date, and tags (max 3 + overflow count).
+  - `DragOverlay` renders a `motion.div` with `scale: 1.04, rotate: 1.5` spring animation following the cursor.
+  - Drag-end logic: if `over.id` is a stage key → drop at end of that column; if it's a card id → drop at that card's index in its stage. Optimistically moves the card locally, then POSTs to `/api/cards/reorder`, replaces state with server response, toasts `Moved to {stage}`. Reverts on failure.
+  - `CardDialog` create/edit form: title (required), description, stage Select, priority Select, channel Select (fetched from `/api/channels` — handled both `{channels:[]}` and bare array shapes, degrades to empty if route missing), dueDate date input, tags, assignee. Edit mode shows a destructive Delete button. On save, POSTs or PATCHes and reloads the board to keep ordering consistent.
+  - State: `cards`, `channels`, `loading`, `dialogOpen`, `editing`, `activeId`. `load()` on mount; `loadChannels()` resilient (try/catch).
+- Verified via curl: `GET /api/cards` → 200 with 10 seeded cards; `POST /api/cards/reorder` with valid cardId moves the card and reassigns positions correctly (tested moving archive→ideas@0, then restored to archive@0); `POST /api/cards/reorder` with nonexistent cardId returns the current board gracefully (no 500).
+- Ran `bun run lint` — clean, no errors or warnings in any of the new files.
+
+Stage Summary:
+- Content Planner is fully functional: 10-column premium Kanban with smooth dnd-kit drag-and-drop (cross-column + within-column reordering), glassmorphic cards with priority/channel/due-date/tags, DragOverlay with spring scale+rotate, create/edit dialog with full field set, and a robust reorder API that handles edge cases (missing card, out-of-range index, stage change).
+- Only the 4 specified files were created. No shared files were edited.
+- The planner auto-detects `/api/channels` (already created by another agent) for the channel Select; if absent it degrades gracefully to "Unassigned".
+- API surface: `GET/POST /api/cards`, `PATCH/DELETE /api/cards/[id]`, `POST /api/cards/reorder`.
+- Ready for users to drag ideas from "Ideas" all the way to "Published".
+
+---
+Task ID: 8-b
+Agent: Trend Research Section Builder
+
+Task: Build the TREND RESEARCH section (`ResearchSection`) + REST API at `/api/trends` for the YT Automation Studio.
+
+Work Log:
+- Read foundation worklog (Tasks 1-6, 7-a, 7-b, 7-c, 7-d) to confirm available shared helpers (`SectionHeader`, `StatCard`, `EmptyState`, `Pill`, `Progress`, `Icon` registry, `api`/`formatNumber`/`colorFor` helpers, `db` client) and conventions used by sibling sections (channels, videos, planner).
+- Inspected the `TrendItem` Prisma model (id, topic, competitor, keyword, searchVolume Int, difficulty Int 0-100, opportunity Int 0-100, category, bookmarked Boolean, notes, source, timestamps) and the seeded 6 trends (Technology/Finance/Self Improvement/Lifestyle/Productivity/Finance categories, opportunities 61-88, search volumes 60K-165K, 2 bookmarked).
+- Verified available shadcn/ui primitives (`Card`, `Button`, `Input`, `Textarea`, `Label`, `Select`, `Badge`, `Dialog`, `AlertDialog`, `Toggle`, `Tooltip`, `ScrollArea`) and confirmed `recharts` (ScatterChart/Scatter/XAxis/YAxis/ZAxis/CartesianGrid/Tooltip/ResponsiveContainer/Cell), `framer-motion`, `sonner` are installed.
+- Created `src/app/api/trends/route.ts`:
+  - `GET` — parses `?bookmarked=true` and `?category=` query params, builds a Prisma `where` filter, returns `{ trends }` ordered by `opportunity desc`. Empty filter returns all trends.
+  - `POST` — validates `topic` (400 if missing/empty). Coerces strings/numbers safely via local helpers. Clamps `difficulty`/`opportunity` to 0–100, floors non-negative `searchVolume`. Defaults: `category="general"`, `bookmarked=false`. Returns 201 with created trend.
+  - Try/catch with 500 fallback and `console.error` for debugging.
+- Created `src/app/api/trends/[id]/route.ts` (Next 16 async `params: Promise<{ id: string }>` signature):
+  - `PATCH` — `findUnique` 404 check, then partial update of only fields present in body (`topic` validated non-empty, `competitor`, `keyword`, `category`, `source`, `notes`, `searchVolume`, `difficulty`, `opportunity`, `bookmarked`). `bookmarked` toggled via boolean — perfect for the star icon click. Returns updated trend.
+  - `DELETE` — 404 if missing, else delete and return `{ ok: true }`.
+- Created `src/components/sections/research.tsx` (named export `ResearchSection`, `"use client"`):
+  - **SectionHeader** — title "Trend Research", description "Discover opportunities, track competitors, and validate ideas", icon `trending-up`. Actions: "Add Trend" primary button + a `Toggle` (outline variant, star icon, fill-when-on) for the bookmarked filter — both bound to `filters.bookmarked`.
+  - **Summary strip** — 4 `StatCard`s in `grid-cols-2 md:grid-cols-4` with color variety and staggered delays: Total Trends (emerald/trending-up), Avg Opportunity (amber/gauge, "out of 100"), Bookmarked (rose/star), Avg Search Volume (teal/activity, formatted via `formatNumber`). Computed via `useMemo` from the loaded trends.
+  - **Opportunity Matrix** (signature visual) — `ScatterChart` in a glass `Card` (height 300px). X = difficulty, Y = opportunity, `ZAxis` range [60, 900] for bubble size based on `searchVolume`. Each point is a `<Cell>` colored by opportunity: emerald `#10b981` if ≥80, amber `#f59e0b` if ≥60, rose `#f43f5e` otherwise — matches the spec exactly. Custom `MatrixTooltip` glass component shows topic + difficulty/opportunity/search-volume grid + keyword + competitor. CartesianGrid with subtle dasharray (opacity 0.08), axis labels "Difficulty →" / "Opportunity →", tabular-nums ticks. Legend (High/Mid/Low) inline. Loading & empty fallback states inside the chart container.
+  - **Filter bar** — glass `Card` with: search `Input` (icon prefix, client-side filter on topic/keyword), category `Select` ("All categories" + distinct categories derived from loaded trends via `useMemo`), bookmarked `Toggle` (synced with header toggle), and a conditional "Clear" button.
+  - **Trends list** — `grid-cols-1 lg:grid-cols-2 gap-3` with `motion.div layout` + `AnimatePresence mode="popLayout"`. Each `TrendCard`:
+    - Header: bold topic (line-clamp-2) + bookmark star button (click toggles via PATCH with optimistic update + revert-on-error).
+    - Sub-meta row: competitor (users icon) + keyword (search icon, truncated).
+    - Pills row: category (teal/tag), source (emerald/link), "Saved" badge (amber/bookmark) when bookmarked.
+    - Three mini-metrics with `Progress` bars: Search Volume (scaled to max → teal), Difficulty (color: low<40 emerald, mid<70 amber, high rose), Opportunity (color: high≥80 emerald, mid≥60 amber, low rose). Each shows numeric value colored to match.
+    - Notes: rendered in a muted tile, truncated at 120 chars with "Show more"/"Show less" toggle (preserves whitespace).
+    - Footer: Edit + Delete ghost buttons (delete in rose).
+    - Subtle opportunity-colored gradient blur in the corner for visual depth.
+  - **Add/Edit Dialog** — `sm:max-w-2xl`, scrollable body (`max-h-[60vh]` via `ScrollArea`), separated footer. Fields: topic (required, with red asterisk), competitor, keyword, category (Input with hint showing existing categories), source, searchVolume (number), difficulty (range input + live Badge + Progress, color-mapped), opportunity (same pattern), notes (Textarea, 4 rows). Difficulty/Opportunity use HTML range sliders with a live colored Badge + Progress preview — much nicer than plain number inputs. Saving state shows spinner on submit button.
+  - **Delete confirmation** — `AlertDialog` with rose destructive action button, spinner while deleting.
+  - **Empty state** — distinct copy + CTA for "no trends at all" (Add Trend button) vs "no trends match filters" (Clear filters button).
+  - **Loading state** — 6 `TrendSkeletonCard`s with `.shimmer` placeholders matching the card layout (header, pills, 3 metrics, footer).
+  - **State**: `trends`, `loading`, `filters {q, category, bookmarked}`, `dialogOpen`, `editing`, `deleteTarget`, `deleting`, `reloadKey`. `load()` runs on mount + whenever `filters.bookmarked`, `filters.category`, or `reloadKey` change — builds query string from server-side filters only (q is client-side per spec). Categories list derived client-side. `toggleBookmark` does optimistic local update + PATCH with revert-on-error.
+  - Palette: emerald/amber/rose/teal only (NO blue/indigo). Dark-first glassmorphism (`glass` class on filter bar + matrix card; `lift` on stat + trend cards for hover). framer-motion staggered entrance + `AnimatePresence` exit animations.
+  - Animations: `motion.div layout` on the grid + `layout` + initial/animate/exit on each card with staggered delay (capped at 0.4s). Star icon `fill="currentColor"` when active for the lucide filled-star look.
+- Verified end-to-end via curl:
+  - `GET /api/trends` → 200 (6 trends ordered by opportunity desc).
+  - `GET /api/trends?bookmarked=true` → 200 (2 bookmarked trends).
+  - `GET /api/trends?category=Finance` → 200 (2 Finance trends).
+  - `POST /api/trends` with valid body → 201 (created).
+  - `POST /api/trends` missing topic → 400 `{error:"Topic is required"}`.
+  - `PATCH /api/trends/[id]` `{bookmarked:true, opportunity:90}` → 200 (both fields updated).
+  - `DELETE /api/trends/[id]` → 200 `{ok:true}`.
+  - `DELETE /api/trends/nonexistent` → 404 `{error:"Trend not found"}`.
+- Ran `bun run lint` — clean, zero errors or warnings.
+- Did NOT edit any shared/foundation files (globals.css, page.tsx, layout.tsx, store.ts, api.ts, types.ts, nav.ts, icon.tsx, ui.tsx, sidebar/topbar/command-palette, db.ts). Only created the 3 required files: `src/app/api/trends/route.ts`, `src/app/api/trends/[id]/route.ts`, `src/components/sections/research.tsx` (overwrote the stub).
+
+Stage Summary:
+- Trend Research section is fully functional end-to-end: list, search, filter by category + bookmarked, create, edit, delete, and toggle bookmark — all with optimistic UI, toast feedback, and reload-on-success.
+- The signature Opportunity Matrix scatter chart renders all trends as opportunity-colored bubbles sized by search volume, with a custom glass tooltip — making it easy to spot high-opportunity / low-difficulty wins at a glance.
+- API follows Next 16 conventions (NextRequest/NextResponse, async `params`), uses `db` from `@/lib/db`, validates inputs, returns proper status codes (200/201/400/404/500).
+- UI is dark-first premium: glassmorphism, emerald/amber/rose/teal palette (no blue/indigo), framer-motion staggered entrance + AnimatePresence exits, shimmer loading skeletons, distinctive color-coded progress bars per metric.
+- 3 new files created. No changes to shared primitives, layout, or other sections.
+- Ready for users to discover, validate, and bookmark content opportunities.
+
+---
+Task ID: 8-c
+Agent: Content Calendar Section Builder
+Task: Build the CONTENT CALENDAR section (`CalendarSection`) + `/api/calendar` route — premium monthly calendar with scheduled videos, dark-first glassmorphism, emerald/amber/teal palette (NO blue/indigo).
+
+Work Log:
+- Read foundation worklog (Tasks 1-6, 7-a/b/c/d) for conventions: shared helpers (`SectionHeader`, `StatCard`, `Pill`, `EmptyState`, `Progress`, `Icon`), `db` from `@/lib/db`, Next 16 `NextRequest`/`NextResponse` with `req.nextUrl.searchParams`, palette emerald/amber/rose/teal/orange only.
+- Inspected `prisma/schema.prisma` (Card.stage incl. `scheduled`/`published` + Card.dueDate, Task.dueDate, Video.publishDate), `prisma/seed.ts` (cards: index 7=scheduled/null dueDate, 8=published/daysAhead(10); videos: publishDate daysAgo; tasks: dueDate daysAhead 0-7), `src/components/ui/checkbox.tsx` + `scroll-area.tsx`, shared `ui.tsx` Pill/Progress API.
+- Created `src/app/api/calendar/route.ts` (GET only):
+  - Parses `?month=YYYY-MM` via `/^(\d{4})-(\d{2})$/` regex (1-indexed month); defaults to current month on absence/malformed.
+  - `start = new Date(year, monthIdx, 1)`, `endExclusive = new Date(year, monthIdx + 1, 1)`.
+  - Three parallel Prisma queries via `Promise.all`:
+    - Cards: `stage in ["scheduled","published"]`, `dueDate: { gte, lt }` → select id/title/dueDate/stage/priority.
+    - Videos: `publishDate: { gte, lt }` → select id/title/publishDate.
+    - Tasks: `dueDate: { gte, lt }` → select id/title/dueDate/priority.
+  - Returns flat `{ events, scheduledCount, publishedCount, taskCount }`. Event ids are prefixed (`card:`, `video:`, `task:`) to prevent collisions. `scheduledCount` = cards stage "scheduled"; `publishedCount` = cards stage "published" + videos; `taskCount` = tasks. Null dates defensively skipped. Try/catch → 500 on error.
+- Created `src/components/sections/calendar.tsx` (named export `CalendarSection`, `"use client"`):
+  1. **SectionHeader** — title "Content Calendar", description, icon "calendar-days". Actions: glass pill month nav (‹ prev / `MMMM yyyy` label / › next, via `addMonths`) + outline "Today" button (sets month + selectedDate to today).
+  2. **Summary strip** — 3 `StatCard`s: Scheduled (teal/clock), Published (emerald/check-circle), Tasks Due (amber/list-checks). Staggered delays.
+  3. **Legend** — color key (teal/emerald/amber dots) + "Today" ring sample.
+  4. **Calendar grid** (custom, NOT shadcn Calendar): weekday headers (Sun-Sat) + 6×7 day grid via `eachDayOfInterval` from `startOfWeek(startOfMonth(m))` to `endOfWeek(endOfMonth(m))`. Each cell is a `motion.button`:
+     - Day number in a circle (emerald-filled on today).
+     - `ring-2 ring-emerald-500/60` on today; `ring-2 ring-primary/40` on selected.
+     - Out-of-month days dimmed (`opacity-40`, hover to 70).
+     - Up to 3 event chips per cell (colored by type: scheduled=teal, published=emerald, task=amber) with leading dot + truncated title; "+N more" overflow indicator; event count badge in top-right.
+     - Staggered entrance (opacity+scale, capped delay 0.18s); `aria-label` with weekday, date, and event count.
+  5. **Selected day panel** (right column, glass Card with primary blur): weekday name + date, or "No day selected" prompt. `AnimatePresence` swaps content on selection change. Lists all events via `ScrollArea` (max-h-80) with type `Pill`, source `Badge`, priority `Badge`, and `h:mm a` timestamp. Empty-day shows "perfect for deep work" hint.
+  6. **Publishing checklist** (glass Card, amber→emerald blur shifting on completion): 8 hardcoded items (Thumbnail created / Script finalized / Voice over recorded / Video edited / SEO optimized / End screen added / Cards added / Scheduled on YouTube), each with icon + `Checkbox` + strikethrough when checked. `Progress` bar (amber→emerald on completion), "X/8 done" header + dynamic status text. "Reset" button clears + toasts. Persisted to `localStorage` key `publish-checklist` via single `updateChecklist` callback.
+  7. **Mobile agenda** (`md:hidden` glass Card): events grouped by day, sorted ascending, each group with left border accent + `EEE, MMM d` header. Rows show dot + title + type Pill + source label + time. `ScrollArea` (max-h-28rem). `EmptyState` fallback.
+  - State: `currentMonth` Date, `data: CalendarResponse|null`, `loading`, `selectedDate: Date|null`, `checklist: Record<string,boolean>`. `useEffect` on `monthKey = format(currentMonth, "yyyy-MM")` fetches `/api/calendar?month=...` with cancellation flag; toast on error. Checklist loaded once from localStorage on mount, persisted on every toggle.
+  - Memoized: `eventsByDay` Map (YYYY-MM-DD → events[]), `days` array — rebuilt only when their deps change.
+  - Palette discipline: ONLY teal/emerald/amber + muted neutral — no blue, no indigo, no violet anywhere.
+  - Responsive: mobile-first (single col xs → summary stack sm → calendar+side grid lg → agenda takes over below md).
+  - Accessibility: `<button>` cells with aria-labels, `<label>` wrapping checkboxes, `focus-visible:ring-2`.
