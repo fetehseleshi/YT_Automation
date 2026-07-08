@@ -11,8 +11,9 @@ function getAuthSecret(): string {
   const configuredSecret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || process.env.TOKEN_ENCRYPTION_KEY;
   if (configuredSecret) return configuredSecret;
 
-  if (process.env.VERCEL_URL) {
-    return `yt-automation-${process.env.VERCEL_URL.replace(/[^a-zA-Z0-9]/g, "-")}`;
+  const runtimeUrl = process.env.NEXTAUTH_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
+  if (runtimeUrl) {
+    return `yt-automation-${runtimeUrl.replace(/https?:\/\//, "").replace(/[^a-zA-Z0-9]/g, "-")}`;
   }
 
   return "yt-automation-dev-fallback-secret";
@@ -20,6 +21,7 @@ function getAuthSecret(): string {
 
 export const authOptions: NextAuthOptions = {
   secret: getAuthSecret(),
+  trustHost: true,
 
   debug: true,
 

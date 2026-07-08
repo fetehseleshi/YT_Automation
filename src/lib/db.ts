@@ -6,7 +6,7 @@ const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
 };
 
-const runtimeConnectionString = process.env.DIRECT_URL || process.env.DATABASE_URL;
+const runtimeConnectionString = process.env.DATABASE_URL || process.env.DIRECT_URL;
 
 if (runtimeConnectionString) {
   process.env.DATABASE_URL = runtimeConnectionString;
@@ -15,7 +15,7 @@ if (runtimeConnectionString) {
 const pool = new pg.Pool({
   connectionString: runtimeConnectionString,
   ssl:
-    runtimeConnectionString?.includes("sslmode=require") || process.env.NODE_ENV === "production"
+    runtimeConnectionString?.includes("sslmode=") || process.env.VERCEL || process.env.NODE_ENV === "production"
       ? { rejectUnauthorized: false }
       : undefined,
 });
