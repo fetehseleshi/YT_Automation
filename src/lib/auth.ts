@@ -8,6 +8,12 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 
 export const authOptions: NextAuthOptions = {
+  secret: process.env.NEXTAUTH_SECRET,
+
+  debug: true,
+
+  trustHost: true,
+
   session: {
     strategy: "jwt",
     // 30 days default; "Remember Me" extends via a custom maxAge in the token.
@@ -171,18 +177,6 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).id = token.id as string;
       }
       return session;
-    },
-  },
-  secret: process.env.NEXTAUTH_SECRET,
-  cookies: {
-    sessionToken: {
-      name: `next-auth.session-token`,
-      options: {
-        httpOnly: true,
-        sameSite: "lax",
-        path: "/",
-        secure: process.env.NODE_ENV === "production",
-      },
     },
   },
 };
