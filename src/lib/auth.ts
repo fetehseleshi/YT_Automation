@@ -7,12 +7,21 @@ import { db } from "@/lib/db";
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 
+function getAuthSecret(): string {
+  const configuredSecret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || process.env.TOKEN_ENCRYPTION_KEY;
+  if (configuredSecret) return configuredSecret;
+
+  if (process.env.VERCEL_URL) {
+    return `yt-automation-${process.env.VERCEL_URL.replace(/[^a-zA-Z0-9]/g, "-")}`;
+  }
+
+  return "yt-automation-dev-fallback-secret";
+}
+
 export const authOptions: NextAuthOptions = {
-  secret: process.env.NEXTAUTH_SECRET,
+  secret: getAuthSecret(),
 
   debug: true,
-
-  trustHost: true,
 
   session: {
     strategy: "jwt",
@@ -94,34 +103,41 @@ export const authOptions: NextAuthOptions = {
         if (existing) {
           userId = existing.id;
           // Upsert the OAuth account record
-          await db.account.upsert({
+          const existingAccount = await db.account.findFirst({
             where: {
-              provider_providerAccountId: {
-                provider: "google",
-                providerAccountId: account.providerAccountId,
-              },
-            },
-            update: {
-              userId,
-              access_token: account.access_token,
-              refresh_token: account.refresh_token,
-              expires_at: account.expires_at,
-              scope: account.scope,
-              id_token: account.id_token,
-            },
-            create: {
-              userId,
-              type: account.type,
               provider: "google",
               providerAccountId: account.providerAccountId,
-              access_token: account.access_token,
-              refresh_token: account.refresh_token,
-              expires_at: account.expires_at,
-              token_type: account.token_type,
-              scope: account.scope,
-              id_token: account.id_token,
             },
           });
+
+          if (existingAccount) {
+            await db.account.update({
+              where: { id: existingAccount.id },
+              data: {
+                userId,
+                access_token: account.access_token,
+                refresh_token: account.refresh_token,
+                expires_at: account.expires_at,
+                scope: account.scope,
+                id_token: account.id_token,
+              },
+            });
+          } else {
+            await db.account.create({
+              data: {
+                userId,
+                type: account.type,
+                provider: "google",
+                providerAccountId: account.providerAccountId,
+                access_token: account.access_token,
+                refresh_token: account.refresh_token,
+                expires_at: account.expires_at,
+                token_type: account.token_type,
+                scope: account.scope,
+                id_token: account.id_token,
+              },
+            });
+          }
           // Mark email verified for Google users
           if (!existing.emailVerified) {
             await db.user.update({ where: { id: userId }, data: { emailVerified: new Date() } });
@@ -188,7 +204,7 @@ export async function hashPassword(plain: string): Promise<string> {
 
 /** Server-side helper: require a session or return null. */
 export async function getSessionUser() {
-  const { getServerSession } = await import("next-auth");
+  const { getServerSession } = await import("next-auth/next");
   const session = await getServerSession(authOptions);
   return session;
 }
